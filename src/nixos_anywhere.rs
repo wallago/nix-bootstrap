@@ -1,19 +1,23 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+use ssh_key::{Algorithm, PrivateKey};
 use std::{
     fs,
     io::{BufRead, BufReader, Write},
+    os::unix::fs::PermissionsExt,
+    path::Path,
 };
 
 use crate::Params;
 
-pub fn run(params: &Params) -> Result<()> {
+// Setup minimal environment for nixos-anywhere and run it
+pub fn setup(params: &Params) -> Result<()> {
     remove_known_hosts_entries(&params)?;
 
     println!(
-        "Installing NixOS on remote host $target_hostname at {}",
-        params.target_destination
+        "Installing NixOS on remote host {} at {}",
+        params.target_hostname, params.target_destination
     );
-    println!("Preparing a new ssh_host_ed25519_key pair for $target_hostname");
+
     Ok(())
 }
 
@@ -36,70 +40,32 @@ fn remove_known_hosts_entries(params: &Params) -> Result<()> {
     Ok(())
 }
 
-// 	green "Installing NixOS on remote host $target_hostname at $target_destination"
+fn extra_files_generation(params: &Params) -> Result<()> {
+    println!(
+        "Preparing a new ssh_host_ed25519_key pair for {}",
+        params.target_hostname
+    );
+    let ssh_path = format!("/temp/{}/etc/ssh", params.persist_dir);
+    let path = Path::new(&ssh_path);
+    fs::create_dir_all(&path)?;
+    let mut permissions = fs::metadata(&path)?.permissions();
+    permissions.set_mode(0o755);
+    if !matches!(permissions.mode(), 0o755) {
+        return Err(anyhow!("Directory failed to set expected permissions"));
+    }
 
-// 	###
-// 	# nixos-anywhere extra-files generation
-// 	###
-// 	green "Preparing a new ssh_host_ed25519_key pair for $target_hostname."
-// 	# Create the directory where sshd expects to find the host keys
-// 	install -d -m755 "$temp/$persist_dir/etc/ssh"
+    let key_path = format!("{}/ssh_host_ed25519_key", ssh_path);
+    let pub_key_path = format!("{}.pub", key_path);
+    let key = PrivateKey::random(&mut rand::thread_rng(), Algorithm::Ed25519)?;
+    key.write_openssh_file(Path::new(&key_path), LineEnding::LF)?;
+    let pub_key = key.public_key();
+    std::fs::write(
+        pub_key_path,
+        format!(
+            "{} {}@{}\n",
+            pub_key, params.target_user, params.target_hostname
+        ),
+    )?;
 
-// 	# Generate host ssh key pair without a passphrase
-// 	ssh-keygen -t ed25519 -f "$temp/$persist_dir/etc/ssh/ssh_host_ed25519_key" -C "$target_user"@"$target_hostname" -N ""
-
-// 	# Set the correct permissions so sshd will accept the key
-// 	chmod 600 "$temp/$persist_dir/etc/ssh/ssh_host_ed25519_key"
-
-// 	green "Adding ssh host fingerprint at $target_destination to ~/.ssh/known_hosts"
-// 	# This will fail if we already know the host, but that's fine
-// 	ssh-keyscan -p "$ssh_port" "$target_destination" | grep -v '^#' >>~/.ssh/known_hosts || true
-
-// 	###
-// 	# nixos-anywhere installation
-// 	###
-// 	cd nixos-installer
-// 	# when using luks, disko expects a passphrase on /tmp/disko-password, so we set it for now and will update the passphrase later
-// 	if no_or_yes "Manually set luks encryption passphrase? (Default: \"$luks_passphrase\")"; then
-// 		blue "Enter your luks encryption passphrase:"
-// 		read -rs luks_passphrase
-// 		$ssh_root_cmd "/bin/sh -c 'echo $luks_passphrase > /tmp/disko-password'"
-// 	else
-// 		green "Using '$luks_passphrase' as the luks encryption passphrase. Change after installation."
-// 		$ssh_root_cmd "/bin/sh -c 'echo $luks_passphrase > /tmp/disko-password'"
-// 	fi
-// 	# this will run if luks_secondary_drive_labels cli argument was set, regardless of whether the luks_passphrase is default or not
-// 	if [ -n "${luks_secondary_drive_labels}" ]; then
-// 		luks_setup_secondary_drive_decryption
-// 	fi
-
-// 	# If you are rebuilding a machine without any hardware changes, this is likely unneeded or even possibly disruptive
-// 	if no_or_yes "Generate a new hardware config for this host? Yes if your nix-config doesn't have an entry for this host."; then
-// 		green "Generating hardware-configuration.nix on $target_hostname and adding it to the local nix-config."
-// 		$ssh_root_cmd "nixos-generate-config --no-filesystems --root /mnt"
-// 		$scp_cmd root@"$target_destination":/mnt/etc/nixos/hardware-configuration.nix \
-// 			"${git_root}"/hosts/nixos/"$target_hostname"/hardware-configuration.nix
-// 		generated_hardware_config=1
-// 	fi
-
-// 	# --extra-files here picks up the ssh host key we generated earlier and puts it onto the target machine
-// 	SHELL=/bin/sh nix run github:nix-community/nixos-anywhere -- \
-// 		--ssh-port "$ssh_port" \
-// 		--post-kexec-ssh-port "$ssh_port" \
-// 		--extra-files "$temp" \
-// 		--flake .#"$target_hostname" \
-// 		root@"$target_destination"
-
-// 	if ! yes_or_no "Has your system restarted and are you ready to continue? (no exits)"; then
-// 		exit 0
-// 	fi
-
-// 	green "Adding $target_destination's ssh host fingerprint to ~/.ssh/known_hosts"
-// 	ssh-keyscan -p "$ssh_port" "$target_destination" | grep -v '^#' >>~/.ssh/known_hosts || true
-
-// 	if [ -n "$persist_dir" ]; then
-// 		$ssh_root_cmd "cp /etc/machine-id $persist_dir/etc/machine-id || true"
-// 		$ssh_root_cmd "cp -R /etc/ssh/ $persist_dir/etc/ssh/ || true"
-// 	fi
-// 	cd - >/dev/null
-// }
+    Ok(())
+}
