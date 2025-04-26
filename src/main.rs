@@ -1,7 +1,10 @@
 use anyhow::{Result, anyhow};
 use clap::{ArgAction, Parser};
 use nix::{
-    sys::signal::{Signal, kill},
+    sys::signal::{
+        Signal::{self},
+        kill,
+    },
     unistd::getpid,
 };
 use ssh2::Session;
@@ -64,10 +67,11 @@ struct Params {
     git_root: String,
     nix_secrets_dir: String,
     generated_hardware_config: bool,
+    temp_path: String,
 }
 
 impl Params {
-    fn new(args: Args) -> Self {
+    fn new(args: Args, temp_path: String) -> Self {
         println!("{}", args.target_user);
         Self {
             target_hostname: args.target_hostname,
@@ -80,15 +84,21 @@ impl Params {
             git_root: args.git_root,
             nix_secrets_dir: args.nix_secrets_dir,
             generated_hardware_config: true,
+            temp_path,
         }
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let params = Params::new(Args::parse());
+    let temp_dir = helpers::creat_tmp_dir()?;
 
-    let temp_dir = Arc::new(Mutex::new(Some(helpers::creat_tmp_dir()?)));
+    let params = Params::new(
+        Args::parse(),
+        temp_dir.path().to_str().ok_or(anyhow!(""))?.to_string(),
+    );
+
+    let temp_dir = Arc::new(Mutex::new(Some(temp_dir)));
     let temp_dir_copy = temp_dir.clone();
 
     tokio::spawn(async move {
@@ -101,7 +111,7 @@ async fn main() -> Result<()> {
 
     if helpers::ask_yes_no("Run nixos-anywhere installation ?").await? {
         println!("You chose yes.");
-        nixos_anywhere::run(&params)?;
+        nixos_anywhere::setup(&params)?;
     } else {
         println!("You chose no.");
         kill(getpid(), Signal::SIGINT)?;
@@ -173,10 +183,10 @@ fn ssh_connection(params: Params) -> Result<()> {
     }
 }
 
-fn scp_upload(sess: &Session, local_path: &str, remote_path: &str) -> Result<()> {
-    // let mut local_file = File::open(local_path)?;
-    // let metadata = local_file.metadata()?;
-    // let mut remote_file = sess.scp_send(Path::new(remote_path), 0o644, metadata.len(), None)?;
-    // std::io::copy(&mut local_file, &mut remote_file)?;
-    Ok(())
-}
+// fn scp_upload(sess: &Session, local_path: &str, remote_path: &str) -> Result<()> {
+//     // let mut local_file = File::open(local_path)?;
+//     // let metadata = local_file.metadata()?;
+//     // let mut remote_file = sess.scp_send(Path::new(remote_path), 0o644, metadata.len(), None)?;
+//     // std::io::copy(&mut local_file, &mut remote_file)?;
+//     Ok(())
+// }
