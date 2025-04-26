@@ -1,7 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
-use std::sync::Arc;
-use tokio::{signal, sync::Mutex};
+use tokio::signal;
 
 mod helpers;
 mod nixos_anywhere;
@@ -62,26 +61,21 @@ async fn main() -> Result<()> {
             .to_string(),
     )?;
 
-    let temp_dir = Arc::new(Mutex::new(Some(temp_dir)));
-    let temp_dir_ctrlc = temp_dir.clone();
-    let temp_dir_nixos_anywhere = temp_dir.clone();
-
     tokio::spawn(async move {
         signal::ctrl_c().await.expect("Failed to listen for Ctrl-C");
-        if let Err(e) = helpers::clear_tmp_dir(temp_dir_ctrlc).await {
+        if let Err(e) = helpers::clear_tmp_dir(temp_dir).await {
             tracing::error!("Failed to clear tmp dir: {e}");
         }
         std::process::exit(130);
     });
 
     if helpers::ask_yes_no("Run nixos-anywhere installation ?").await? {
-        if let Err(err) = nixos_anywhere::setup(&params) {
-            helpers::clear_tmp_dir(temp_dir_nixos_anywhere).await?;
-            return Err(err);
-        };
+        nixos_anywhere::setup(&params)?;
     } else {
         tracing::warn!("Go out of here ! Grrr");
     }
+
+    Ok(())
 
     // if help::ask_yes_no("Generate host (ssh-based) age key ?").await? {
     //     println!("You chose yes.");
@@ -126,10 +120,6 @@ async fn main() -> Result<()> {
     //     println!("You chose no.");
     //     kill(getpid(), Signal::SIGINT);
     // }
-
-    helpers::clear_tmp_dir(temp_dir).await?;
-
-    Ok(())
 }
 
 // fn ssh_connection(params: Params) -> Result<()> {

@@ -1,11 +1,6 @@
-use std::sync::Arc;
-
 use anyhow::{Context, Result, anyhow};
 use tempfile::{TempDir, tempdir};
-use tokio::{
-    io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader},
-    sync::Mutex,
-};
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 pub async fn ask_yes_no(prompt: &str) -> Result<bool> {
     let mut stdout = io::stdout();
@@ -42,18 +37,15 @@ pub fn creat_tmp_dir() -> Result<TempDir> {
     Ok(temp_dir)
 }
 
-pub async fn clear_tmp_dir(temp_dir: Arc<Mutex<Option<TempDir>>>) -> Result<()> {
-    if let Some(dir) = temp_dir.lock().await.take() {
-        let dir_path = dir
-            .path()
-            .to_str()
-            .ok_or(anyhow!("Error: Temp directory parsing fialed"))?
-            .to_string();
-        dir.close()
-            .context(format!("Failed to clear {}", dir_path))?;
-        tracing::info!("Temporary directory cleared");
-    } else {
-        tracing::info!("Temporary directory already cleared");
-    }
+pub async fn clear_tmp_dir(temp_dir: TempDir) -> Result<()> {
+    let temp_dir_path = temp_dir
+        .path()
+        .to_str()
+        .ok_or(anyhow!("Error: Temp directory parsing fialed"))?
+        .to_string();
+    temp_dir
+        .close()
+        .context(format!("Failed to clear {}", temp_dir_path))?;
+    tracing::info!("Temporary directory cleared");
     Ok(())
 }
