@@ -1,14 +1,6 @@
-use anyhow::{Result, anyhow};
-use clap::{ArgAction, Parser};
-use nix::{
-    sys::signal::{
-        Signal::{self},
-        kill,
-    },
-    unistd::getpid,
-};
-use ssh2::Session;
-use std::{net::TcpStream, path::Path, sync::Arc};
+use anyhow::{Context, Result, anyhow};
+use clap::Parser;
+use std::sync::Arc;
 use tokio::{signal, sync::Mutex};
 
 mod helpers;
@@ -17,104 +9,78 @@ mod nixos_anywhere;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Specify target_hostname of the target host to deploy the nixos config on.
+    /// Hostname (ex: nixos) of the target host
     #[arg(short = 'n', long)]
     target_hostname: String,
 
-    /// Specify ip or domain to the target host.
+    /// IP (ex: 127.0.0.1) or Domain (ex: domain.com) to the target host
     #[arg(short = 'd', long)]
     target_destination: String,
 
-    /// Specify target_user with sudo access. nix-config will be cloned to their home. [default: current user]
+    /// User (ex: me) with sudo access
     #[arg(short = 'u', long, default_value_t = whoami::devicename())]
     target_user: String,
-
-    /// Specify the full path to the ssh_key you'll use for remote access to the target during install process.
-    #[arg(short = 'k', long)]
-    ssh_key: String,
-
-    /// Specify the ssh port to use for remote access. [default: 22]
-    #[arg(long = "port", default_value_t = String::from("22"))]
-    ssh_port: String,
-
-    // maybe useless
-    /// Specify the path to your git nixos config
-    #[arg(short = 'g', long)]
-    git_root: String,
-
-    // maybe useless
-    /// Specify the path to your git nixos config
-    #[arg(short = 's', long)]
-    nix_secrets_dir: String,
-
-    /// Use this flag if the target machine has impermanence enabled. WARNING: Assumes /persist path.
-    #[arg(long = "impermanence", action = ArgAction::SetTrue)]
-    impermanence: bool,
-
-    /// Enable debug mode.
-    #[arg(long = "debug", action = ArgAction::SetTrue)]
-    debug: bool,
 }
 
 struct Params {
     target_hostname: String,
     target_destination: String,
     target_user: String,
-    ssh_port: String,
-    ssh_key: String,
     persist_dir: String,
-    nix_src_path: String,
-    git_root: String,
-    nix_secrets_dir: String,
-    generated_hardware_config: bool,
     temp_path: String,
+    home_path: String,
 }
 
 impl Params {
-    fn new(args: Args, temp_path: String) -> Self {
-        println!("{}", args.target_user);
-        Self {
+    fn new(args: Args, temp_path: String) -> Result<Self> {
+        Ok(Self {
             target_hostname: args.target_hostname,
             target_destination: args.target_destination,
             target_user: args.target_user,
-            ssh_port: args.ssh_port,
-            ssh_key: args.ssh_key,
             persist_dir: "/persist".to_string(),
-            nix_src_path: "src/nix/".to_string(),
-            git_root: args.git_root,
-            nix_secrets_dir: args.nix_secrets_dir,
-            generated_hardware_config: true,
             temp_path,
-        }
+            home_path: dirs2::home_dir()
+                .context("Error: No home directory find")?
+                .to_str()
+                .context("Error: Home directory parsing failed")?
+                .to_string(),
+        })
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
     let temp_dir = helpers::creat_tmp_dir()?;
 
     let params = Params::new(
         Args::parse(),
-        temp_dir.path().to_str().ok_or(anyhow!(""))?.to_string(),
-    );
+        temp_dir
+            .path()
+            .to_str()
+            .ok_or(anyhow!("Error: Temp directory parsing fialed"))?
+            .to_string(),
+    )?;
 
     let temp_dir = Arc::new(Mutex::new(Some(temp_dir)));
-    let temp_dir_copy = temp_dir.clone();
+    let temp_dir_ctrlc = temp_dir.clone();
+    let temp_dir_nixos_anywhere = temp_dir.clone();
 
     tokio::spawn(async move {
         signal::ctrl_c().await.expect("Failed to listen for Ctrl-C");
-        if let Err(e) = helpers::clear_tmp_dir(temp_dir_copy).await {
-            eprintln!("Failed to clear tmp dir: {e}");
+        if let Err(e) = helpers::clear_tmp_dir(temp_dir_ctrlc).await {
+            tracing::error!("Failed to clear tmp dir: {e}");
         }
         std::process::exit(130);
     });
 
     if helpers::ask_yes_no("Run nixos-anywhere installation ?").await? {
-        println!("You chose yes.");
-        nixos_anywhere::setup(&params)?;
+        if let Err(err) = nixos_anywhere::setup(&params) {
+            helpers::clear_tmp_dir(temp_dir_nixos_anywhere).await?;
+            return Err(err);
+        };
     } else {
-        println!("You chose no.");
-        kill(getpid(), Signal::SIGINT)?;
+        tracing::warn!("Go out of here ! Grrr");
     }
 
     // if help::ask_yes_no("Generate host (ssh-based) age key ?").await? {
@@ -166,22 +132,22 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn ssh_connection(params: Params) -> Result<()> {
-    let tcp = TcpStream::connect(format!("{}:{}", params.target_destination, params.ssh_port))?;
-    let mut sess = Session::new()?;
-    sess.set_tcp_stream(tcp);
-    sess.handshake()?;
+// fn ssh_connection(params: Params) -> Result<()> {
+//     let tcp = TcpStream::connect(format!("{}:{}", params.target_destination, params.ssh_port))?;
+//     let mut sess = Session::new()?;
+//     sess.set_tcp_stream(tcp);
+//     sess.handshake()?;
 
-    // Authenticate with private key
-    sess.userauth_pubkey_file(&params.target_user, None, Path::new(&params.ssh_key), None)?;
+//     // Authenticate with private key
+//     sess.userauth_pubkey_file(&params.target_user, None, Path::new(&params.ssh_key), None)?;
 
-    if sess.authenticated() {
-        println!("SSH connection is established");
-        Ok(())
-    } else {
-        Err(anyhow!("SSH connection failed"))
-    }
-}
+//     if sess.authenticated() {
+//         println!("SSH connection is established");
+//         Ok(())
+//     } else {
+//         Err(anyhow!("SSH connection failed"))
+//     }
+// }
 
 // fn scp_upload(sess: &Session, local_path: &str, remote_path: &str) -> Result<()> {
 //     // let mut local_file = File::open(local_path)?;
