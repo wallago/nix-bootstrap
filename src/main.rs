@@ -16,18 +16,29 @@ struct Args {
     #[arg(short = 'd', long)]
     target_destination: String,
 
-    /// User (ex: me) with sudo access
+    /// User (ex: me) of the target with sudo access
     #[arg(short = 'u', long, default_value_t = whoami::devicename())]
     target_user: String,
+
+    /// Path (absolute) to the ssh key to use for remote access.
+    #[arg(short = 'k', long, default_value_t = format!("/home/{}/.ssh/id_ed25519",whoami::devicename()))]
+    ssh_key_path: String,
+
+    /// SSH port (ex: 22) of the remote access
+    #[arg(long = "port", default_value_t = String::from("22"))]
+    ssh_port: String,
 }
 
 struct Params {
     target_hostname: String,
     target_destination: String,
     target_user: String,
+    ssh_key_path: String,
+    ssh_port: String,
     persist_dir: String,
     temp_path: String,
     home_path: String,
+    generated_hardware_config: bool,
 }
 
 impl Params {
@@ -36,6 +47,8 @@ impl Params {
             target_hostname: args.target_hostname,
             target_destination: args.target_destination,
             target_user: args.target_user,
+            ssh_key_path: args.ssh_key_path,
+            ssh_port: args.ssh_port,
             persist_dir: "/persist".to_string(),
             temp_path,
             home_path: dirs2::home_dir()
@@ -43,6 +56,7 @@ impl Params {
                 .to_str()
                 .context("Error: Home directory parsing failed")?
                 .to_string(),
+            generated_hardware_config: false,
         })
     }
 }
@@ -52,7 +66,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let temp_dir = helpers::creat_tmp_dir()?;
 
-    let params = Params::new(
+    let mut params = Params::new(
         Args::parse(),
         temp_dir
             .path()
@@ -70,79 +84,10 @@ async fn main() -> Result<()> {
     });
 
     if helpers::ask_yes_no("Run nixos-anywhere installation ?").await? {
-        nixos_anywhere::setup(&params)?;
+        nixos_anywhere::setup(&mut params).await?;
     } else {
         tracing::warn!("Go out of here ! Grrr");
     }
 
     Ok(())
-
-    // if help::ask_yes_no("Generate host (ssh-based) age key ?").await? {
-    //     println!("You chose yes.");
-    //     // sops_genarte_host_age_key
-    // } else {
-    //     println!("You chose no.");
-    //     kill(getpid(), Signal::SIGINT);
-    // }
-
-    // if help::ask_yes_no("Generate user age key ?").await? {
-    //     println!("You chose yes.");
-    //     // sops_setup_user_age_key
-    // } else {
-    //     println!("You chose no.");
-    //     kill(getpid(), Signal::SIGINT);
-    // }
-
-    // // sops_add_creation_rules
-
-    // if help::ask_yes_no(&format!(
-    //     "Do you want to copy your full nix-config and nix-secrets to {} ?",
-    //     params.target_hostname
-    // ))
-    // .await?
-    // {
-    //     println!("You chose yes.");
-    //     // ssh-keyscan
-    // } else {
-    //     println!("You chose no.");
-    //     kill(getpid(), Signal::SIGINT);
-    // }
-
-    // if help::ask_yes_no(&format!(
-    //     "Do you want to commit and push the generated hardware-configuration.nix for {} to nix-config ?",
-    //     params.target_hostname
-    // ))
-    // .await?
-    // {
-    //     println!("You chose yes.");
-    //     // ssh-keyscan
-    // } else {
-    //     println!("You chose no.");
-    //     kill(getpid(), Signal::SIGINT);
-    // }
 }
-
-// fn ssh_connection(params: Params) -> Result<()> {
-//     let tcp = TcpStream::connect(format!("{}:{}", params.target_destination, params.ssh_port))?;
-//     let mut sess = Session::new()?;
-//     sess.set_tcp_stream(tcp);
-//     sess.handshake()?;
-
-//     // Authenticate with private key
-//     sess.userauth_pubkey_file(&params.target_user, None, Path::new(&params.ssh_key), None)?;
-
-//     if sess.authenticated() {
-//         println!("SSH connection is established");
-//         Ok(())
-//     } else {
-//         Err(anyhow!("SSH connection failed"))
-//     }
-// }
-
-// fn scp_upload(sess: &Session, local_path: &str, remote_path: &str) -> Result<()> {
-//     // let mut local_file = File::open(local_path)?;
-//     // let metadata = local_file.metadata()?;
-//     // let mut remote_file = sess.scp_send(Path::new(remote_path), 0o644, metadata.len(), None)?;
-//     // std::io::copy(&mut local_file, &mut remote_file)?;
-//     Ok(())
-// }
