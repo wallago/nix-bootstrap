@@ -1,6 +1,6 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use rand::rngs::OsRng;
-use ssh_key::{LineEnding, PrivateKey, PublicKey};
+use ssh_key::{LineEnding, PrivateKey};
 use std::{
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Write},
@@ -99,19 +99,9 @@ fn ssh_key_generation(params: &Params) -> Result<()> {
         home_ssh_path
     );
 
-    let sess = helpers::ssh_handshake(params)?;
-    let (host_key, _) = sess
-        .host_key()
-        .ok_or(anyhow!("Error: No remote SSH key found"))?;
-
-    let host_pub_key = PublicKey::from_bytes(host_key)
-        .context("Error: Host public key parsing from bytes failed")?
-        .to_openssh()
-        .context("Error: Host public key parsing to open ssh fromat failed")?;
-
     let host_entry = format!(
         "[{}]:{} {}",
-        params.target_destination, params.ssh_port, host_pub_key
+        params.target_destination, params.ssh.port, params.ssh.host_key
     );
     let known_hosts_content = fs::read_to_string(&home_ssh_path)
         .context(format!("Error: Failed to read {}", home_ssh_path))?;
@@ -126,7 +116,7 @@ fn ssh_key_generation(params: &Params) -> Result<()> {
             ))?;
         writeln!(file, "{}", host_entry).context(format!(
             "Error: Failed to add line {} into {}",
-            host_pub_key, home_ssh_path
+            params.ssh.host_key, home_ssh_path
         ))?;
     } else {
         tracing::warn!("Already know the host fingerprint");
@@ -140,8 +130,6 @@ async fn generated_hardware_config(params: &mut Params) -> Result<()> {
             "Generating hardware-configuration.nix on {}.",
             params.target_hostname
         );
-        let sess = helpers::ssh_handshake(params)?;
-        helpers::ssh_auth(params, sess)?;
 
         // should try to connect to it and find the way to make sudo command lol
         //     $ssh_root_cmd "nixos-generate-config --no-filesystems --root /mnt"
