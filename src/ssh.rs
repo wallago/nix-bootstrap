@@ -1,8 +1,13 @@
-use std::{net::TcpStream, path::Path};
+use std::{
+    fs::File,
+    io::{self, Read},
+    net::TcpStream,
+    path::Path,
+};
 
 use anyhow::{Context, Result, anyhow};
 use ssh_key::PublicKey;
-use ssh2::Session;
+use ssh2::{Session, Sftp};
 
 pub struct SSH {
     session: Session,
@@ -66,5 +71,74 @@ impl SSH {
         } else {
             Err(anyhow!("SSH connection failed"))
         }
+    }
+
+    pub fn run_command(&self, cmd: &str) -> Result<String> {
+        let mut channel = self.session.channel_session().unwrap();
+        channel.exec(cmd)?;
+        let mut s = String::new();
+        channel.read_to_string(&mut s)?;
+        channel.wait_close()?;
+        Ok(s)
+    }
+
+    pub fn download(&self, remote_path: &str) -> Result<Vec<u8>> {
+        if Path::new(remote_path).is_file() {
+            let (mut remote_file, _) = self.session.scp_recv(Path::new(remote_path))?;
+            let mut contents = Vec::new();
+            remote_file.read_to_end(&mut contents)?;
+            remote_file.send_eof()?;
+            remote_file.wait_eof()?;
+            remote_file.close()?;
+            remote_file.wait_close()?;
+            Ok(contents)
+        } else {
+            return Err(anyhow!("Error: Remote path is not file: {:?}", remote_path));
+        }
+    }
+
+    pub fn upload(&self, sftp: &Sftp, local_path: &str, remote_path: &str) -> Result<()> {
+        if Path::new(local_path).is_dir() {
+            for entry in std::fs::read_dir(local_path)? {
+                let entry = entry?;
+                let path = entry.path();
+                let remote_path = Path::new(remote_path).join(entry.file_name());
+                if path.is_dir() {
+                    sftp.mkdir(&remote_path, 0o755)?; // Ignore error if exists
+                    self.upload(
+                        sftp,
+                        &path
+                            .to_str()
+                            .ok_or(anyhow!("Error: Parsing {:?} into string failed", path))?
+                            .to_string(),
+                        &remote_path
+                            .to_str()
+                            .ok_or(anyhow!(
+                                "Error: Parsing {:?} into string failed",
+                                remote_path
+                            ))?
+                            .to_string(),
+                    )?;
+                } else if path.is_file() {
+                    let mut local_file = File::open(&path)?;
+                    let mut remote_file = sftp.create(&remote_path)?;
+                    io::copy(&mut local_file, &mut remote_file)?;
+                }
+            }
+        } else if Path::new(local_path).is_file() {
+            let mut local_file = File::open(local_path)?;
+            let mut remote_file = sftp.create(Path::new(remote_path))?;
+            io::copy(&mut local_file, &mut remote_file)?;
+        } else {
+            return Err(anyhow!(
+                "Error: Local path is neither file nor directory: {:?}",
+                local_path
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn get_sftp(&self) -> Result<Sftp> {
+        Ok(self.session.sftp()?)
     }
 }

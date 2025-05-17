@@ -1,9 +1,14 @@
+use std::fs::OpenOptions;
+use std::io::Write;
+
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
+use helpers::is_ssh_key_exist_localy;
 use tokio::signal;
 
 mod helpers;
 mod nixos_anywhere;
+mod sops_age_key;
 mod ssh;
 
 #[derive(Parser, Debug)]
@@ -43,6 +48,7 @@ struct Params {
     temp_path: String,
     home_path: String,
     generated_hardware_config: bool,
+    git_dir_path: String,
 }
 
 impl Params {
@@ -66,6 +72,11 @@ impl Params {
                 .context("Error: Home directory parsing failed")?
                 .to_string(),
             generated_hardware_config: false,
+            git_dir_path: git2::Repository::discover(".")?
+                .path()
+                .to_str()
+                .ok_or(anyhow!("Error: Git path parsing to string failed"))?
+                .to_string(),
         })
     }
 }
@@ -97,6 +108,72 @@ async fn main() -> Result<()> {
     } else {
         tracing::warn!("Go out of here ! Grrr");
     }
+
+    sops_age_key::setup(&mut params).await?;
+
+    if helpers::ask_yes_no(&format!(
+        "Do you want to copy your full nix-config to {} ?",
+        params.target_hostname
+    ))
+    .await?
+    {
+        tracing::info!(
+            "Adding ssh host fingerprint at {} to ~/.ssh/known_hosts",
+            params.target_hostname
+        );
+
+        let home_ssh_path = format!("{}/.ssh/known_hosts", params.home_path);
+        tracing::info!(
+            "Adding ssh host fingerprint at {} to {}",
+            params.target_destination,
+            home_ssh_path
+        );
+
+        let host_entry = format!(
+            "[{}]:{} {}",
+            params.target_destination, params.ssh.port, params.ssh.host_key
+        );
+        if !is_ssh_key_exist_localy(&params, &host_entry)? {
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .append(true)
+                .open(&home_ssh_path)
+                .context(format!(
+                    "Error: Failed to open or apppend {}",
+                    home_ssh_path
+                ))?;
+            writeln!(file, "{}", host_entry).context(format!(
+                "Error: Failed to add line {} into {}",
+                params.ssh.host_key, home_ssh_path
+            ))?;
+        }
+        params.ssh.upload(
+            &params.ssh.get_sftp()?,
+            &format!("{}/../nix-config", params.git_dir_path),
+            &format!("/home/{}", params.target_hostname),
+        )?;
+
+        if helpers::ask_yes_no("Do you want to rebuild immediately ?").await? {
+            tracing::info!("Rebuilding nix-config on {}", params.target_hostname);
+            params.ssh.run_command(&format!(
+                "cd /home/{}/nix-config && sudo nixos-rebuild --flake .#{} switch",
+                params.target_hostname, params.target_hostname
+            ))?;
+        } else {
+            tracing::warn!("Go out of here ! Grrr");
+        }
+    } else {
+        tracing::info!("NixOS was successfully installed !");
+        tracing::info!(
+            "Post-install config build instructions:\nTo copy nix-config from this machine to the {}, run the following command.\nscp - \nTo rebuild, sign into {} and run the following command.\ncd nix-config\nsudo nixos-rebuild --show-trace --flake .#{} switch",
+            params.target_hostname,
+            params.target_hostname,
+            params.target_hostname
+        );
+    }
+
+    tracing::info!("Success!");
 
     Ok(())
 }

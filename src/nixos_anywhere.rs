@@ -8,7 +8,10 @@ use std::{
     path::Path,
 };
 
-use crate::{Params, helpers};
+use crate::{
+    Params,
+    helpers::{self, is_ssh_key_exist_localy},
+};
 
 // Setup minimal environment for nixos-anywhere and run it
 pub async fn setup(params: &mut Params) -> Result<()> {
@@ -23,6 +26,29 @@ pub async fn setup(params: &mut Params) -> Result<()> {
     ssh_key_generation(params)?;
 
     generated_hardware_config(params).await?;
+
+    if !helpers::ask_yes_no("Has your system restarted and are you ready to continue? (no exits)")
+        .await?
+    {
+        tracing::warn!("Go out of here ! Grrr");
+        return Ok(());
+    };
+
+    tracing::info!(
+        "Adding {}'s ssh host fingerprint to ~/.ssh/known_hosts",
+        params.target_destination
+    );
+
+    if Path::new(&params.persist_dir).exists() {
+        params.ssh.run_command(&format!(
+            "cp /etc/machine-id {}/etc/machine-id || true",
+            params.persist_dir
+        ))?;
+        params.ssh.run_command(&format!(
+            "cp -R /etc/ssh/ {}/etc/ssh/ || true",
+            params.persist_dir
+        ))?;
+    }
 
     Ok(())
 }
@@ -103,11 +129,10 @@ fn ssh_key_generation(params: &Params) -> Result<()> {
         "[{}]:{} {}",
         params.target_destination, params.ssh.port, params.ssh.host_key
     );
-    let known_hosts_content = fs::read_to_string(&home_ssh_path)
-        .context(format!("Error: Failed to read {}", home_ssh_path))?;
-    if !known_hosts_content.contains(&host_entry) {
+    if !is_ssh_key_exist_localy(&params, &host_entry)? {
         let mut file = OpenOptions::new()
             .create(true)
+            .write(true)
             .append(true)
             .open(&home_ssh_path)
             .context(format!(
@@ -131,10 +156,23 @@ async fn generated_hardware_config(params: &mut Params) -> Result<()> {
             params.target_hostname
         );
 
-        // should try to connect to it and find the way to make sudo command lol
-        //     $ssh_root_cmd "nixos-generate-config --no-filesystems --root /mnt"
-        //     $scp_cmd root@"$target_destination":/mnt/etc/nixos/hardware-configuration.nix \
-        //       "${git_root}"/hosts/nixos/"$target_hostname"/hardware-configuration.nix
+        params
+            .ssh
+            .run_command("nixos-generate-config --no-filesystems --root /mnt")?;
+        let contents = params
+            .ssh
+            .download("/mnt/etc/nixos/hardware-configuration.nix")?;
+        let local_path = format!(
+            "{}/hosts/{}/hardware-configuration.nix",
+            params.git_dir_path, params.target_hostname
+        );
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&local_path)
+            .context(format!("Error: Failed to open or apppend {}", local_path))?;
+        file.write_all(&contents)?;
 
         params.generated_hardware_config = true;
     } else {
