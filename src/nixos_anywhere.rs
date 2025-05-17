@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use rand::rngs::OsRng;
 use ssh_key::{LineEnding, PrivateKey};
 use std::{
@@ -10,12 +10,13 @@ use std::{
 
 use crate::{
     Params,
-    helpers::{self, is_ssh_key_exist_localy},
+    helpers::{self, add_ssh_host_fingerprint},
 };
 
-// Setup minimal environment for nixos-anywhere and run it
 pub async fn setup(params: &mut Params) -> Result<()> {
-    remove_known_hosts_entries(params)?;
+    if !helpers::ask_yes_no("Run nixos-anywhere installation ?").await? {
+        return Err(anyhow!("Won't run nixos-anywhere installation"));
+    }
 
     tracing::info!(
         "Installing NixOS on remote host {} at {}",
@@ -23,38 +24,35 @@ pub async fn setup(params: &mut Params) -> Result<()> {
         params.target_destination
     );
 
-    ssh_key_generation(params)?;
+    remove_target_ssh_fingerprint(params)?;
 
-    generated_hardware_config(params).await?;
+    generate_target_ssh_key(params)?;
+
+    if helpers::ask_yes_no("Generate a new hardware config for this host ? (optional)").await? {
+        generate_hardware_config(params)?;
+    }
+
+    run_nixos_anywhere(params)?;
 
     if !helpers::ask_yes_no("Has your system restarted and are you ready to continue? (no exits)")
         .await?
     {
-        tracing::warn!("Go out of here ! Grrr");
-        return Ok(());
+        return Err(anyhow!("nixos-anywhere seems to failed"));
     };
 
-    tracing::info!(
-        "Adding {}'s ssh host fingerprint to ~/.ssh/known_hosts",
-        params.target_destination
-    );
+    params.ssh.reconnect()?;
 
-    if Path::new(&params.persist_dir).exists() {
-        params.ssh.run_command(&format!(
-            "cp /etc/machine-id {}/etc/machine-id || true",
-            params.persist_dir
-        ))?;
-        params.ssh.run_command(&format!(
-            "cp -R /etc/ssh/ {}/etc/ssh/ || true",
-            params.persist_dir
-        ))?;
-    }
+    add_ssh_host_fingerprint(params)?;
 
-    Ok(())
+    make_some_files_persistent_on_target(params)
 }
 
-fn remove_known_hosts_entries(params: &Params) -> Result<()> {
-    tracing::info!("Wiping knowning hosts of {}", params.target_destination);
+fn remove_target_ssh_fingerprint(params: &Params) -> Result<()> {
+    tracing::info!(
+        "Wiping knowning hosts of {} or {}",
+        params.target_hostname,
+        params.target_destination
+    );
     let patterns = [&params.target_hostname, &params.target_destination].to_vec();
     let ssh_know_hosts_path = format!("{}/.ssh/known_hosts", params.home_path);
     let file_in = fs::File::open(&ssh_know_hosts_path)
@@ -76,7 +74,7 @@ fn remove_known_hosts_entries(params: &Params) -> Result<()> {
     Ok(())
 }
 
-fn ssh_key_generation(params: &Params) -> Result<()> {
+fn generate_target_ssh_key(params: &Params) -> Result<()> {
     tracing::info!(
         "Preparing a new ssh host ed25519 key pair for {}",
         params.target_hostname
@@ -112,71 +110,79 @@ fn ssh_key_generation(params: &Params) -> Result<()> {
         "Error: Failed to write public key into {}",
         pub_key_path
     ))?;
-
     fs::set_permissions(&priv_key_path, fs::Permissions::from_mode(0o600)).context(format!(
         "Error: Failed to set permissions for {}",
         priv_key_path
     ))?;
 
-    let home_ssh_path = format!("{}/.ssh/known_hosts", params.home_path);
-    tracing::info!(
-        "Adding ssh host fingerprint at {} to {}",
-        params.target_destination,
-        home_ssh_path
-    );
+    add_ssh_host_fingerprint(params)?;
 
-    let host_entry = format!(
-        "[{}]:{} {}",
-        params.target_destination, params.ssh.port, params.ssh.host_key
-    );
-    if !is_ssh_key_exist_localy(&params, &host_entry)? {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .append(true)
-            .open(&home_ssh_path)
-            .context(format!(
-                "Error: Failed to open or apppend {}",
-                home_ssh_path
-            ))?;
-        writeln!(file, "{}", host_entry).context(format!(
-            "Error: Failed to add line {} into {}",
-            params.ssh.host_key, home_ssh_path
-        ))?;
-    } else {
-        tracing::warn!("Already know the host fingerprint");
-    }
     Ok(())
 }
 
-async fn generated_hardware_config(params: &mut Params) -> Result<()> {
-    if helpers::ask_yes_no("Generate a new hardware config for this host ?").await? {
-        tracing::info!(
-            "Generating hardware-configuration.nix on {}.",
-            params.target_hostname
-        );
+fn generate_hardware_config(params: &mut Params) -> Result<()> {
+    tracing::info!(
+        "Generating hardware-configuration.nix on {}.",
+        params.target_hostname
+    );
 
-        params
-            .ssh
-            .run_command("nixos-generate-config --no-filesystems --root /mnt")?;
-        let contents = params
-            .ssh
-            .download("/mnt/etc/nixos/hardware-configuration.nix")?;
-        let local_path = format!(
-            "{}/hosts/{}/hardware-configuration.nix",
-            params.git_dir_path, params.target_hostname
-        );
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&local_path)
-            .context(format!("Error: Failed to open or apppend {}", local_path))?;
-        file.write_all(&contents)?;
+    params
+        .ssh
+        .run_command("nixos-generate-config --no-filesystems --root /mnt")?;
+    let contents = params
+        .ssh
+        .download_file("/mnt/etc/nixos/hardware-configuration.nix")?;
+    let local_path = format!(
+        "{}/hosts/{}/hardware-configuration.nix",
+        params.config, params.target_hostname
+    );
+    let mut file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&local_path)
+        .context(format!("Error: Failed to open or apppend {}", local_path))?;
+    file.write_all(&contents)?;
 
-        params.generated_hardware_config = true;
-    } else {
-        tracing::warn!("Go out of here ! Grrr");
-    };
+    params.generated_hardware_config = true;
+    Ok(())
+}
+
+fn run_nixos_anywhere(params: &Params) -> Result<()> {
+    tracing::info!(
+        "Adding {}'s ssh host fingerprint to ~/.ssh/known_hosts",
+        params.target_destination
+    );
+
+    helpers::run_command(&format!(
+        "nix run github:nix-community/nixos-anywhere -- --extra-files {} --ssh-port {} --post-kexec-ssh-port {} --flake {}#{} {}@{}",
+        params.temp_path,
+        params.ssh.port,
+        params.ssh.port,
+        params.config,
+        params.target_hostname,
+        params.target_user,
+        params.target_destination
+    ))?;
+
+    Ok(())
+}
+
+fn make_some_files_persistent_on_target(params: &Params) -> Result<()> {
+    tracing::info!(
+        "Adding {}'s ssh host fingerprint to ~/.ssh/known_hosts",
+        params.target_destination
+    );
+
+    if Path::new(&params.persist_dir).exists() {
+        params.ssh.run_command(&format!(
+            "cp /etc/machine-id {}/etc/machine-id || true",
+            params.persist_dir
+        ))?;
+        params.ssh.run_command(&format!(
+            "cp -R /etc/ssh/ {}/etc/ssh/ || true",
+            params.persist_dir
+        ))?;
+    }
     Ok(())
 }

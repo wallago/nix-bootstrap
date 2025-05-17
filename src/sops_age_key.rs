@@ -6,35 +6,40 @@ use serde_yaml::Value;
 use crate::{Params, helpers};
 
 pub async fn setup(params: &mut Params) -> Result<()> {
-    if helpers::ask_yes_no("Generate host (ssh-based) age key ?").await? {
-        tracing::info!("Generating an age key based on the new ssh_host_ed25519_key");
-
-        let host_age_key = age::ssh::Recipient::from_str(&params.ssh.host_key)
-            .map_err(|_| anyhow!("Failed to parse SSH host key into an age recipient"))?;
-
-        tracing::info!("Updating .sops.yaml");
-        sops_update_age_key(
-            params,
-            "hosts",
-            &params.target_hostname,
-            &host_age_key.to_string(),
-        )?;
-    } else {
-        tracing::warn!("Go out of here ! Grrr");
+    if helpers::ask_yes_no("Generate target host (ssh-based) age key ?").await? {
+        generate_target_host_age_key(params)?;
     }
 
-    if helpers::ask_yes_no("Generate user age key ?").await? {
-        tracing::info!("Generating an age key based on the new ssh_host_ed25519_key");
-
-        let key_name = format!("${}_${}", params.target_user, params.target_hostname);
-        let user_age_key = age::x25519::Identity::generate().to_public();
-
-        tracing::info!("Updating .sops.yaml");
-        sops_update_age_key(params, "users", &key_name, &user_age_key.to_string())?;
-    } else {
-        tracing::warn!("Go out of here ! Grrr");
+    if helpers::ask_yes_no("Generate target user age key ?").await? {
+        generate_target_user_age_key(params)?;
     }
+    Ok(())
+}
 
+fn generate_target_host_age_key(params: &Params) -> Result<()> {
+    tracing::info!("Generating an age key based on the new ssh_host_ed25519_key");
+
+    let host_age_key = age::ssh::Recipient::from_str(&params.ssh.pub_key)
+        .map_err(|_| anyhow!("Failed to parse SSH host key into an age recipient"))?;
+
+    tracing::info!("Updating .sops.yaml");
+    sops_update_age_key(
+        params,
+        "hosts",
+        &params.target_hostname,
+        &host_age_key.to_string(),
+    )?;
+    Ok(())
+}
+
+fn generate_target_user_age_key(params: &Params) -> Result<()> {
+    tracing::info!("Generating an age key based on the new ssh_host_ed25519_key");
+
+    let key_name = format!("${}_${}", params.target_user, params.target_hostname);
+    let user_age_key = age::x25519::Identity::generate().to_public();
+
+    tracing::info!("Updating .sops.yaml");
+    sops_update_age_key(params, "users", &key_name, &user_age_key.to_string())?;
     Ok(())
 }
 
@@ -50,7 +55,7 @@ fn sops_update_age_key(
         ));
     }
 
-    let sops_path = format!("{}/.sops.yaml", params.git_dir_path);
+    let sops_path = format!("{}/.sops.yaml", params.config);
     let contents = fs::read_to_string(&sops_path)?;
     let sops: Value = serde_yaml::from_str(&contents)?;
     let mut sops_copy = sops.clone();

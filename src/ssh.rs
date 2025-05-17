@@ -11,8 +11,12 @@ use ssh2::{Session, Sftp};
 
 pub struct SSH {
     session: Session,
-    pub host_key: String,
+    pub pub_key: String,
     pub port: String,
+    destination: String,
+    user: String,
+    password: Option<String>,
+    key_path: Option<String>,
 }
 
 impl SSH {
@@ -23,54 +27,77 @@ impl SSH {
         key_path: Option<String>,
         user: String,
     ) -> Result<Self> {
+        let (session, pub_key) =
+            Self::connect_and_authenticate(&port, &destination, &password, &key_path, &user)?;
+
+        Ok(Self {
+            session,
+            pub_key,
+            port,
+            destination,
+            user,
+            password,
+            key_path,
+        })
+    }
+
+    fn connect_and_authenticate(
+        port: &str,
+        destination: &str,
+        password: &Option<String>,
+        key_path: &Option<String>,
+        user: &str,
+    ) -> Result<(Session, String)> {
         let tcp = TcpStream::connect(format!("{}:{}", destination, port))?;
         let mut sess = Session::new().context("Error: SSH session creation failed")?;
         sess.set_tcp_stream(tcp);
         sess.handshake().context("Error: SSH Handshake failed")?;
-        let (host_key, _) = sess
+
+        let (pub_key_bytes, _) = sess
             .host_key()
             .ok_or(anyhow!("Error: No remote SSH key found"))?;
-        let formatted_host_key = PublicKey::from_bytes(host_key)
+        let pub_key = PublicKey::from_bytes(pub_key_bytes)
             .context("Error: Host public key parsing from bytes failed")?
             .to_openssh()
-            .context("Error: Host public key parsing to open ssh fromat failed")?;
+            .context("Error: Host public key parsing to open ssh format failed")?;
 
-        let ssh = Self {
-            session: sess,
-            host_key: formatted_host_key,
-            port,
-        };
         match key_path {
-            Some(key_path) => ssh.auth_by_key(&user, &key_path)?,
+            Some(kp) => {
+                sess.userauth_pubkey_file(user, None, Path::new(kp), None)
+                    .context("Error: SSH authentication failed by key")?;
+            }
             None => match password {
-                Some(password) => ssh.auth_by_password(&user, &password)?,
+                Some(pw) => {
+                    sess.userauth_password(user, pw)
+                        .context("Error: SSH authentication failed by password")?;
+                }
                 None => return Err(anyhow!("Error: No SSH key or password was given")),
             },
         }
-        Ok(ssh)
-    }
 
-    fn auth_by_key(&self, user: &str, key_path: &str) -> Result<()> {
-        self.session
-            .userauth_pubkey_file(&user, None, Path::new(&key_path), None)
-            .context("Error: SSH authentification failed by key")?;
-        self.check_auth()
-    }
-
-    fn auth_by_password(&self, user: &str, password: &str) -> Result<()> {
-        self.session
-            .userauth_password(&user, password)
-            .context("Error: SSH authentification failed by password")?;
-        self.check_auth()
-    }
-
-    fn check_auth(&self) -> Result<()> {
-        if self.session.authenticated() {
-            tracing::info!("SSH connection is established");
-            Ok(())
-        } else {
-            Err(anyhow!("SSH connection failed"))
+        if !sess.authenticated() {
+            return Err(anyhow!("SSH connection authentication failed"));
         }
+
+        Ok((sess, pub_key))
+    }
+
+    pub fn reconnect(&mut self) -> Result<()> {
+        tracing::info!(
+            "Reconnecting SSH session to {}:{}",
+            self.destination,
+            self.port
+        );
+        let (new_session, new_pub_key) = Self::connect_and_authenticate(
+            &self.port,
+            &self.destination,
+            &self.password,
+            &self.key_path,
+            &self.user,
+        )?;
+        self.session = new_session;
+        self.pub_key = new_pub_key;
+        Ok(())
     }
 
     pub fn run_command(&self, cmd: &str) -> Result<String> {
@@ -82,7 +109,7 @@ impl SSH {
         Ok(s)
     }
 
-    pub fn download(&self, remote_path: &str) -> Result<Vec<u8>> {
+    pub fn download_file(&self, remote_path: &str) -> Result<Vec<u8>> {
         if Path::new(remote_path).is_file() {
             let (mut remote_file, _) = self.session.scp_recv(Path::new(remote_path))?;
             let mut contents = Vec::new();
@@ -97,7 +124,7 @@ impl SSH {
         }
     }
 
-    pub fn upload(&self, sftp: &Sftp, local_path: &str, remote_path: &str) -> Result<()> {
+    pub fn upload_dir(&self, sftp: &Sftp, local_path: &str, remote_path: &str) -> Result<()> {
         if Path::new(local_path).is_dir() {
             for entry in std::fs::read_dir(local_path)? {
                 let entry = entry?;
@@ -105,7 +132,7 @@ impl SSH {
                 let remote_path = Path::new(remote_path).join(entry.file_name());
                 if path.is_dir() {
                     sftp.mkdir(&remote_path, 0o755)?; // Ignore error if exists
-                    self.upload(
+                    self.upload_dir(
                         sftp,
                         &path
                             .to_str()
@@ -125,13 +152,9 @@ impl SSH {
                     io::copy(&mut local_file, &mut remote_file)?;
                 }
             }
-        } else if Path::new(local_path).is_file() {
-            let mut local_file = File::open(local_path)?;
-            let mut remote_file = sftp.create(Path::new(remote_path))?;
-            io::copy(&mut local_file, &mut remote_file)?;
         } else {
             return Err(anyhow!(
-                "Error: Local path is neither file nor directory: {:?}",
+                "Error: Local path is not a directory: {:?}",
                 local_path
             ));
         }

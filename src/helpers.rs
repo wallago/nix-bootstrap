@@ -1,4 +1,7 @@
-use std::fs;
+use std::{
+    fs::{self, OpenOptions},
+    io::Write,
+};
 
 use anyhow::{Context, Result, anyhow};
 use tempfile::{TempDir, tempdir};
@@ -54,9 +57,50 @@ pub async fn clear_tmp_dir(temp_dir: TempDir) -> Result<()> {
     Ok(())
 }
 
-pub fn is_ssh_key_exist_localy(params: &Params, key: &str) -> Result<bool> {
+pub fn is_ssh_fingerprint_is_known(params: &Params, key: &str) -> Result<bool> {
     let home_ssh_path = format!("{}/.ssh/known_hosts", params.home_path);
     let known_hosts_content = fs::read_to_string(&home_ssh_path)
         .context(format!("Error: Failed to read {}", home_ssh_path))?;
     Ok(known_hosts_content.contains(&key))
+}
+
+pub fn add_ssh_host_fingerprint(params: &Params) -> Result<()> {
+    let home_ssh_path = format!("{}/.ssh/known_hosts", params.home_path);
+    let host_entry = format!(
+        "[{}]:{} {}",
+        params.target_destination, params.ssh.port, params.ssh.pub_key
+    );
+    tracing::info!(
+        "Adding ssh host fingerprint at {} to {}",
+        params.target_destination,
+        home_ssh_path
+    );
+
+    if !is_ssh_fingerprint_is_known(&params, &host_entry)? {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(&home_ssh_path)
+            .context(format!(
+                "Error: Failed to open or apppend {}",
+                home_ssh_path
+            ))?;
+        writeln!(file, "{}", host_entry).context(format!(
+            "Error: Failed to add line {} into {}",
+            params.ssh.pub_key, home_ssh_path
+        ))?;
+    } else {
+        tracing::warn!("Already know the host fingerprint");
+    }
+    Ok(())
+}
+
+pub fn run_command(cmd: &str) -> Result<()> {
+    std::process::Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .status()
+        .context("failed to run command")?;
+    Ok(())
 }
