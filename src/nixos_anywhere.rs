@@ -26,13 +26,15 @@ pub async fn setup(params: &mut Params) -> Result<()> {
 
     remove_target_ssh_fingerprint(params)?;
 
+    params.ssh.connect()?;
+
     generate_target_ssh_key(params)?;
 
     if helpers::ask_yes_no("Generate a new hardware config for this host ? (optional)").await? {
         generate_hardware_config(params)?;
     }
 
-    run_nixos_anywhere(params)?;
+    run_nixos_anywhere(params).await?;
 
     if !helpers::ask_yes_no("Has your system restarted and are you ready to continue? (no exits)")
         .await?
@@ -40,7 +42,7 @@ pub async fn setup(params: &mut Params) -> Result<()> {
         return Err(anyhow!("nixos-anywhere seems to failed"));
     };
 
-    params.ssh.reconnect()?;
+    params.ssh.connect()?;
 
     add_ssh_host_fingerprint(params)?;
 
@@ -128,7 +130,7 @@ fn generate_hardware_config(params: &mut Params) -> Result<()> {
 
     params
         .ssh
-        .run_command("nixos-generate-config --no-filesystems --root /mnt")?;
+        .run_command("sudo nixos-generate-config --no-filesystems --root /mnt")?;
     let contents = params
         .ssh
         .download_file("/mnt/etc/nixos/hardware-configuration.nix")?;
@@ -148,7 +150,7 @@ fn generate_hardware_config(params: &mut Params) -> Result<()> {
     Ok(())
 }
 
-fn run_nixos_anywhere(params: &Params) -> Result<()> {
+async fn run_nixos_anywhere(params: &mut Params) -> Result<()> {
     tracing::info!(
         "Adding {}'s ssh host fingerprint to ~/.ssh/known_hosts",
         params.target_destination
@@ -164,6 +166,29 @@ fn run_nixos_anywhere(params: &Params) -> Result<()> {
         params.target_user,
         params.target_destination
     ))?;
+
+    let mut stdout = tokio::io::stdout();
+    let input = helpers::enter_input(
+        &mut stdout,
+        &format!("Change the target's username (empty if you won't): "),
+    )
+    .await?;
+
+    if !input.is_empty() {
+        params.target_user = input
+    }
+
+    if params.ssh.key_path.is_none() {
+        let input = helpers::enter_input(
+            &mut stdout,
+            &format!("Change the target's password (empty if you won't): "),
+        )
+        .await?;
+
+        if !input.is_empty() {
+            params.ssh.password = Some(input)
+        }
+    }
 
     Ok(())
 }

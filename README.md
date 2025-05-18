@@ -31,3 +31,7 @@
    3. update sops file with new keys
 3. copy config to target
 4. build the full config
+
+# DEBUG
+
+`cargo run -- -n octopus -d localhost -u nixos -p me --port 10022 --config  /home/wallago/nix-config/`

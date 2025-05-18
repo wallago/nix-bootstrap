@@ -5,15 +5,30 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use tempfile::{TempDir, tempdir};
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, Stdout};
 
 use crate::Params;
 
 pub async fn ask_yes_no(prompt: &str) -> Result<bool> {
+    let border = "#".repeat(prompt.len() + 11) + "\n";
+
     let mut stdout = io::stdout();
-    let border = "#".repeat(prompt.len() + 11);
     stdout
-        .write_all(format!("{border}\n{prompt} [y/N]: ").as_bytes())
+        .write_all(border.as_bytes())
+        .await
+        .context("Error: Failed to write in stdout for [y/N]")?;
+    let input = enter_input(&mut stdout, &format!("{prompt} [y/N]: ")).await?;
+    stdout
+        .write_all(border.as_bytes())
+        .await
+        .context("Error: Failed to write in stdout for [y/N]")?;
+
+    Ok(matches!(input.trim().to_lowercase().as_str(), "y" | "yes"))
+}
+
+pub async fn enter_input(stdout: &mut Stdout, prompt: &str) -> Result<String> {
+    stdout
+        .write_all(prompt.as_bytes())
         .await
         .context("Error: Failed to write in stdout for [y/N]")?;
     stdout
@@ -27,12 +42,7 @@ pub async fn ask_yes_no(prompt: &str) -> Result<bool> {
         .read_line(&mut input)
         .await
         .context("Error: Failed to read stdin for [y/N]")?;
-    stdout
-        .write_all(format!("{border}\n").as_bytes())
-        .await
-        .context("Error: Failed to write in stdout for [y/N]")?;
-
-    Ok(matches!(input.trim().to_lowercase().as_str(), "y" | "yes"))
+    Ok(input)
 }
 
 pub fn creat_tmp_dir() -> Result<TempDir> {
@@ -68,7 +78,13 @@ pub fn add_ssh_host_fingerprint(params: &Params) -> Result<()> {
     let home_ssh_path = format!("{}/.ssh/known_hosts", params.home_path);
     let host_entry = format!(
         "[{}]:{} {}",
-        params.target_destination, params.ssh.port, params.ssh.pub_key
+        params.target_destination,
+        params.ssh.port,
+        params
+            .ssh
+            .pub_key
+            .clone()
+            .ok_or(anyhow!("error: ssh connection is not established"))?
     );
     tracing::info!(
         "Adding ssh host fingerprint at {} to {}",
@@ -88,7 +104,12 @@ pub fn add_ssh_host_fingerprint(params: &Params) -> Result<()> {
             ))?;
         writeln!(file, "{}", host_entry).context(format!(
             "Error: Failed to add line {} into {}",
-            params.ssh.pub_key, home_ssh_path
+            params
+                .ssh
+                .pub_key
+                .clone()
+                .ok_or(anyhow!("error: ssh connection is not established"))?,
+            home_ssh_path
         ))?;
     } else {
         tracing::warn!("Already know the host fingerprint");

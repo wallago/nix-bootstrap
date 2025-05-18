@@ -21,6 +21,7 @@ in pkgs.mkShell {
     echo "  -net nic -net user,hostfwd=tcp::10022-:22 \\"
     echo "  -vga virtio \\"
     echo "  -usb -device usb-tablet"
+    echo "NOTE: remove -cdrom ... if you wont boot on ISO"
   '';
 }
 

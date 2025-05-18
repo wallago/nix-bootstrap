@@ -10,13 +10,13 @@ use ssh_key::PublicKey;
 use ssh2::{Session, Sftp};
 
 pub struct SSH {
-    session: Session,
-    pub pub_key: String,
+    session: Option<Session>,
+    pub pub_key: Option<String>,
     pub port: String,
     destination: String,
     user: String,
-    password: Option<String>,
-    key_path: Option<String>,
+    pub password: Option<String>,
+    pub key_path: Option<String>,
 }
 
 impl SSH {
@@ -27,12 +27,9 @@ impl SSH {
         key_path: Option<String>,
         user: String,
     ) -> Result<Self> {
-        let (session, pub_key) =
-            Self::connect_and_authenticate(&port, &destination, &password, &key_path, &user)?;
-
         Ok(Self {
-            session,
-            pub_key,
+            session: None,
+            pub_key: None,
             port,
             destination,
             user,
@@ -82,7 +79,7 @@ impl SSH {
         Ok((sess, pub_key))
     }
 
-    pub fn reconnect(&mut self) -> Result<()> {
+    pub fn connect(&mut self) -> Result<()> {
         tracing::info!(
             "Reconnecting SSH session to {}:{}",
             self.destination,
@@ -95,32 +92,42 @@ impl SSH {
             &self.key_path,
             &self.user,
         )?;
-        self.session = new_session;
-        self.pub_key = new_pub_key;
+        self.session = Some(new_session);
+        self.pub_key = Some(new_pub_key);
         Ok(())
     }
 
     pub fn run_command(&self, cmd: &str) -> Result<String> {
-        let mut channel = self.session.channel_session().unwrap();
-        channel.exec(cmd)?;
-        let mut s = String::new();
-        channel.read_to_string(&mut s)?;
-        channel.wait_close()?;
-        Ok(s)
+        match &self.session {
+            Some(sess) => {
+                let mut channel = sess.channel_session().unwrap();
+                channel.exec(cmd)?;
+                let mut s = String::new();
+                channel.read_to_string(&mut s)?;
+                channel.wait_close()?;
+                Ok(s)
+            }
+            None => Err(anyhow!("SSH session is not connected")),
+        }
     }
 
     pub fn download_file(&self, remote_path: &str) -> Result<Vec<u8>> {
-        if Path::new(remote_path).is_file() {
-            let (mut remote_file, _) = self.session.scp_recv(Path::new(remote_path))?;
-            let mut contents = Vec::new();
-            remote_file.read_to_end(&mut contents)?;
-            remote_file.send_eof()?;
-            remote_file.wait_eof()?;
-            remote_file.close()?;
-            remote_file.wait_close()?;
-            Ok(contents)
-        } else {
-            return Err(anyhow!("Error: Remote path is not file: {:?}", remote_path));
+        match &self.session {
+            Some(sess) => {
+                if Path::new(remote_path).is_file() {
+                    let (mut remote_file, _) = sess.scp_recv(Path::new(remote_path))?;
+                    let mut contents = Vec::new();
+                    remote_file.read_to_end(&mut contents)?;
+                    remote_file.send_eof()?;
+                    remote_file.wait_eof()?;
+                    remote_file.close()?;
+                    remote_file.wait_close()?;
+                    Ok(contents)
+                } else {
+                    return Err(anyhow!("Error: Remote path is not file: {:?}", remote_path));
+                }
+            }
+            None => Err(anyhow!("SSH session is not connected")),
         }
     }
 
@@ -162,6 +169,9 @@ impl SSH {
     }
 
     pub fn get_sftp(&self) -> Result<Sftp> {
-        Ok(self.session.sftp()?)
+        match &self.session {
+            Some(sess) => Ok(sess.sftp()?),
+            None => Err(anyhow!("SSH session is not connected")),
+        }
     }
 }

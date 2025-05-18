@@ -19,8 +19,14 @@ pub async fn setup(params: &mut Params) -> Result<()> {
 fn generate_target_host_age_key(params: &Params) -> Result<()> {
     tracing::info!("Generating an age key based on the new ssh_host_ed25519_key");
 
-    let host_age_key = age::ssh::Recipient::from_str(&params.ssh.pub_key)
-        .map_err(|_| anyhow!("Failed to parse SSH host key into an age recipient"))?;
+    let host_age_key = age::ssh::Recipient::from_str(
+        &params
+            .ssh
+            .pub_key
+            .clone()
+            .ok_or(anyhow!("error: ssh connection is not established"))?,
+    )
+    .map_err(|_| anyhow!("Failed to parse SSH host key into an age recipient"))?;
 
     tracing::info!("Updating .sops.yaml");
     sops_update_age_key(
