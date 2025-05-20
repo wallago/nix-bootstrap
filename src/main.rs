@@ -36,18 +36,17 @@ impl Config {
     }
 }
 
+#[derive(Default)]
+struct State {
+    run_nixos_anywhere: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let mut config = Config::new(Args::parse())?;
+    let config = Config::new(Args::parse())?;
+    let mut state = State::default();
 
-    let mut target_user = helpers::enter_input(None, "Enter ssh target user (default: nixos):")
-        .await?
-        .trim()
-        .to_string();
-    if target_user.is_empty() {
-        target_user = "nixos".to_string();
-    }
     let mut target_dest =
         helpers::enter_input(None, "Enter ssh target destination (default: 127.0.0.1):")
             .await?
@@ -64,18 +63,20 @@ async fn main() -> Result<()> {
         ssh_port = "22".to_string();
     }
 
-    let mut ssh = ssh::SshSession::new(target_user, ssh_port, target_dest).await?;
+    let mut ssh = ssh::SshSession::new(ssh_port, target_dest).await?;
 
-    generate_target_hardware(&config, &ssh).await?;
-    run_nixos_anywhere(&config, &ssh).await?;
+    _ = generate_target_hardware(&config, &ssh).await?;
+    state.run_nixos_anywhere = run_nixos_anywhere(&config, &ssh).await?;
 
-    ssh.reconnect(Some("wallago".to_string())).await?;
+    if state.run_nixos_anywhere {
+        ssh.reconnect().await?;
+    }
 
     tracing::info!("Success!");
     Ok(())
 }
 
-async fn generate_target_hardware(config: &Config, ssh: &ssh::SshSession) -> Result<()> {
+async fn generate_target_hardware(config: &Config, ssh: &ssh::SshSession) -> Result<bool> {
     if !helpers::ask_yes_no(&format!(
         "Do you want to generating hardware-configuration.nix on {}@{}",
         ssh.user, ssh.destination
@@ -83,7 +84,7 @@ async fn generate_target_hardware(config: &Config, ssh: &ssh::SshSession) -> Res
     .await?
     {
         tracing::warn!("Skipping hardware-configuration generation");
-        return Ok(());
+        return Ok(false);
     }
 
     ssh.run_command("sudo nixos-generate-config --no-filesystems --root /mnt")?;
@@ -100,13 +101,13 @@ async fn generate_target_hardware(config: &Config, ssh: &ssh::SshSession) -> Res
         .context(format!("Failed to open or apppend {}", local_path))?;
     file.write_all(&contents)?;
 
-    Ok(())
+    Ok(true)
 }
 
-async fn run_nixos_anywhere(config: &Config, ssh: &ssh::SshSession) -> Result<()> {
+async fn run_nixos_anywhere(config: &Config, ssh: &ssh::SshSession) -> Result<bool> {
     if !helpers::ask_yes_no("Do you want to run nixos-anywhere").await? {
         tracing::warn!("Skipping nixos-anywhere");
-        return Ok(());
+        return Ok(false);
     }
 
     tracing::info!(
@@ -121,5 +122,6 @@ async fn run_nixos_anywhere(config: &Config, ssh: &ssh::SshSession) -> Result<()
     helpers::run_command(&format!(
         "nix run github:nix-community/nixos-anywhere -- --ssh-port {} --flake {}#{} {}@{}",
         ssh.port, config.path, config.hostname, ssh.user, ssh.destination,
-    ))
+    ))?;
+    Ok(true)
 }

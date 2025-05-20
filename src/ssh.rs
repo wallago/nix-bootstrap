@@ -20,29 +20,44 @@ pub struct SshSession {
 }
 
 impl SshSession {
-    pub async fn new(user: String, port: String, destination: String) -> Result<Self> {
+    pub async fn new(port: String, destination: String) -> Result<Self> {
+        let (session, pub_key, current_user) =
+            Self::connect_and_authenticate(None, &port, &destination).await?;
         tracing::info!(
             "Connecting SSH session to {}@{}:{}",
-            user,
+            current_user,
             destination,
             port
         );
 
-        let (session, pub_key) = Self::connect_and_authenticate(&user, &port, &destination).await?;
         Ok(Self {
             session,
             pub_key,
-            user,
+            user: current_user,
             port,
             destination,
         })
     }
 
     async fn connect_and_authenticate(
-        user: &str,
+        user: Option<&str>,
         port: &str,
         destination: &str,
-    ) -> Result<(Session, String)> {
+    ) -> Result<(Session, String, String)> {
+        let mut current_user = match user {
+            Some(user) => user,
+            None => "nixos",
+        };
+
+        let new_user =
+            helpers::enter_input(None, &format!("Enter ssh user (default: {current_user}):"))
+                .await?
+                .trim()
+                .to_string();
+        if !new_user.is_empty() {
+            current_user = &new_user
+        }
+
         let tcp = TcpStream::connect(format!("{}:{}", destination, port))?;
         let mut sess = Session::new().context("SSH session creation failed")?;
         sess.set_tcp_stream(tcp);
@@ -62,11 +77,11 @@ impl SshSession {
                     .await?
                     .trim()
                     .to_string();
-                sess.userauth_password(user, &password)
+                sess.userauth_password(current_user, &password)
                     .context("SSH authentication failed by password")?;
             }
         } else {
-            sess.userauth_agent(user)
+            sess.userauth_agent(current_user)
                 .context("SSH authentication failed by agent")?;
         }
 
@@ -74,21 +89,19 @@ impl SshSession {
             return Err(anyhow!("SSH connection authentication failed"));
         }
 
-        Ok((sess, pub_key))
+        Ok((sess, pub_key, current_user.to_string()))
     }
 
-    pub async fn reconnect(&mut self, user: Option<String>) -> Result<()> {
-        if let Some(user) = user {
-            self.user = user
-        }
+    pub async fn reconnect(&mut self) -> Result<()> {
+        let (new_session, new_pub_key, current_user) =
+            Self::connect_and_authenticate(Some(&self.user), &self.port, &self.destination).await?;
+        self.user = current_user;
         tracing::info!(
             "Reconnecting SSH session to {}@{}:{}",
             self.user,
             self.destination,
             self.port
         );
-        let (new_session, new_pub_key) =
-            Self::connect_and_authenticate(&self.user, &self.port, &self.destination).await?;
         self.session = new_session;
         self.pub_key = new_pub_key;
         Ok(())
@@ -114,48 +127,3 @@ impl SshSession {
         Ok(contents)
     }
 }
-
-//     pub fn upload_dir(&self, sftp: &Sftp, local_path: &str, remote_path: &str) -> Result<()> {
-//         if Path::new(local_path).is_dir() {
-//             for entry in std::fs::read_dir(local_path)? {
-//                 let entry = entry?;
-//                 let path = entry.path();
-//                 let remote_path = Path::new(remote_path).join(entry.file_name());
-//                 if path.is_dir() {
-//                     sftp.mkdir(&remote_path, 0o755)?; // Ignore error if exists
-//                     self.upload_dir(
-//                         sftp,
-//                         &path
-//                             .to_str()
-//                             .ok_or(anyhow!("Error: Parsing {:?} into string failed", path))?
-//                             .to_string(),
-//                         &remote_path
-//                             .to_str()
-//                             .ok_or(anyhow!(
-//                                 "Error: Parsing {:?} into string failed",
-//                                 remote_path
-//                             ))?
-//                             .to_string(),
-//                     )?;
-//                 } else if path.is_file() {
-//                     let mut local_file = File::open(&path)?;
-//                     let mut remote_file = sftp.create(&remote_path)?;
-//                     io::copy(&mut local_file, &mut remote_file)?;
-//                 }
-//             }
-//         } else {
-//             return Err(anyhow!(
-//                 "Error: Local path is not a directory: {:?}",
-//                 local_path
-//             ));
-//         }
-//         Ok(())
-//     }
-
-//     pub fn get_sftp(&self) -> Result<Sftp> {
-//         match &self.session {
-//             Some(sess) => Ok(sess.sftp()?),
-//             None => Err(anyhow!("SSH session is not connected")),
-//         }
-//     }
-// }
