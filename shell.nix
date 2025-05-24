@@ -10,6 +10,7 @@ in pkgs.mkShell {
   shellHook = ''
     echo "Create disk"
     echo "qemu-img create -f qcow2 vm-disk.qcow2 20G\n"
+    echo ""
     echo "Running NixOS ISO from: ${nixosIso}"
     echo "qemu-system-x86_64 \\"
     echo "  -enable-kvm \\"
@@ -20,7 +21,8 @@ in pkgs.mkShell {
     echo "  -drive file=vm-disk.qcow2,format=qcow2 \\"
     echo "  -net nic -net user,hostfwd=tcp::10022-:22 \\"
     echo "  -vga virtio \\"
-    echo "  -usb -device usb-tablet\n"
+    echo "  -usb -device usb-tablet"
+    echo ""
     echo "Running NixOS from:"
     echo "qemu-system-x86_64 \\"
     echo "  -enable-kvm \\"
@@ -30,7 +32,7 @@ in pkgs.mkShell {
     echo "  -drive file=vm-disk.qcow2,format=qcow2 \\"
     echo "  -net nic -net user,hostfwd=tcp::10022-:2222 \\"
     echo "  -vga virtio \\"
-    echo "  -usb -device usb-tablet\n"
+    echo "  -usb -device usb-tablet"
   '';
 }
 

@@ -1,13 +1,8 @@
-use std::{
-    fs::File,
-    io::{self, Read},
-    net::TcpStream,
-    path::Path,
-};
+use std::{io::Read, net::TcpStream, path::Path};
 
 use anyhow::{Context, Result, anyhow};
 use ssh_key::PublicKey;
-use ssh2::{Session, Sftp};
+use ssh2::Session;
 
 use crate::helpers;
 
@@ -73,7 +68,7 @@ impl SshSession {
             if !helpers::ask_yes_no(&format!("Do you want to use SSH agent to connect",)).await? {
                 return Err(anyhow!("No valide SSH authentication method was selected"));
             } else {
-                let mut password = helpers::enter_input(None, "Enter ssh password:")
+                let password = helpers::enter_input(None, "Enter ssh password:")
                     .await?
                     .trim()
                     .to_string();

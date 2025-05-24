@@ -1,8 +1,7 @@
-use std::{fs::OpenOptions, io::Write, path::Path};
+use std::{fs::OpenOptions, io::Write, path::Path, str::FromStr};
 
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
-use tokio::signal;
 
 mod helpers;
 mod ssh;
@@ -72,6 +71,8 @@ async fn main() -> Result<()> {
         ssh.reconnect().await?;
     }
 
+    generate_age_key(&config, &ssh)?;
+
     tracing::info!("Success!");
     Ok(())
 }
@@ -124,4 +125,22 @@ async fn run_nixos_anywhere(config: &Config, ssh: &ssh::SshSession) -> Result<bo
         ssh.port, config.path, config.hostname, ssh.user, ssh.destination,
     ))?;
     Ok(true)
+}
+
+fn generate_age_key(config: &Config, ssh: &ssh::SshSession) -> Result<()> {
+    tracing::info!(
+        "Generating an age key based on the ssh key for {}@{}",
+        ssh.user,
+        ssh.destination
+    );
+
+    let host_age_key = age::ssh::Recipient::from_str(&ssh.pub_key)
+        .map_err(|_| anyhow!("Failed to parse SSH host key into an age recipient"))?;
+
+    tracing::debug!("ssh pub key: {}", ssh.pub_key);
+    tracing::debug!("ssh pub key to age: {}", host_age_key.to_string());
+
+    tracing::info!("Updating .sops.yaml");
+    helpers::sops_update_age_key(&config.path, &config.hostname, &host_age_key.to_string())?;
+    Ok(())
 }

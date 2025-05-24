@@ -1,10 +1,7 @@
-use std::{
-    fs::{self, OpenOptions},
-    io::Write,
-};
+use std::fs::{self};
 
 use anyhow::{Context, Result, anyhow};
-use tempfile::{TempDir, tempdir};
+use serde_yaml::Value;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, Stdout};
 
 pub async fn ask_yes_no(prompt: &str) -> Result<bool> {
@@ -14,12 +11,12 @@ pub async fn ask_yes_no(prompt: &str) -> Result<bool> {
     stdout
         .write_all(border.as_bytes())
         .await
-        .context("Error: Failed to write in stdout for [y/N]")?;
+        .context("Failed to write in stdout for [y/N]")?;
     let input = enter_input(Some(&mut stdout), &format!("{prompt} [y/N]: ")).await?;
     stdout
         .write_all(border.as_bytes())
         .await
-        .context("Error: Failed to write in stdout for [y/N]")?;
+        .context("Failed to write in stdout for [y/N]")?;
 
     Ok(matches!(input.trim().to_lowercase().as_str(), "y" | "yes"))
 }
@@ -32,92 +29,17 @@ pub async fn enter_input(stdout: Option<&mut Stdout>, prompt: &str) -> Result<St
     stdout
         .write_all(prompt.as_bytes())
         .await
-        .context("Error: Failed to write in stdout for [y/N]")?;
-    stdout
-        .flush()
-        .await
-        .context("Error: Flushing stdout failed")?;
+        .context("Failed to write in stdout for [y/N]")?;
+    stdout.flush().await.context("Flushing stdout failed")?;
 
     let mut input = String::new();
     let mut reader = BufReader::new(io::stdin());
     reader
         .read_line(&mut input)
         .await
-        .context("Error: Failed to read stdin for [y/N]")?;
+        .context("Failed to read stdin for [y/N]")?;
     Ok(input)
 }
-
-pub fn creat_tmp_dir() -> Result<TempDir> {
-    let temp_dir = tempdir().context("Error: Failed to create temp directory")?;
-    tracing::info!(
-        "Temporary directory created at: {}",
-        temp_dir.path().display()
-    );
-    Ok(temp_dir)
-}
-
-pub async fn clear_tmp_dir(temp_dir: TempDir) -> Result<()> {
-    let temp_dir_path = temp_dir
-        .path()
-        .to_str()
-        .ok_or(anyhow!("Error: Temp directory parsing fialed"))?
-        .to_string();
-    temp_dir
-        .close()
-        .context(format!("Failed to clear {}", temp_dir_path))?;
-    tracing::info!("Temporary directory cleared");
-    Ok(())
-}
-
-// pub fn is_ssh_fingerprint_is_known(params: &Params, key: &str) -> Result<bool> {
-//     let home_ssh_path = format!("{}/.ssh/known_hosts", params.home_path);
-//     let known_hosts_content = fs::read_to_string(&home_ssh_path)
-//         .context(format!("Error: Failed to read {}", home_ssh_path))?;
-//     Ok(known_hosts_content.contains(&key))
-// }
-
-// pub fn add_ssh_host_fingerprint(params: &Params) -> Result<()> {
-//     let home_ssh_path = format!("{}/.ssh/known_hosts", params.home_path);
-//     let host_entry = format!(
-//         "[{}]:{} {}",
-//         params.target_destination,
-//         params.ssh.port,
-//         params
-//             .ssh
-//             .pub_key
-//             .clone()
-//             .ok_or(anyhow!("error: ssh connection is not established"))?
-//     );
-//     tracing::info!(
-//         "Adding ssh host fingerprint at {} to {}",
-//         params.target_destination,
-//         home_ssh_path
-//     );
-
-//     if !is_ssh_fingerprint_is_known(&params, &host_entry)? {
-//         let mut file = OpenOptions::new()
-//             .create(true)
-//             .write(true)
-//             .append(true)
-//             .open(&home_ssh_path)
-//             .context(format!(
-//                 "Error: Failed to open or apppend {}",
-//                 home_ssh_path
-//             ))?;
-//         writeln!(file, "{}", host_entry).context(format!(
-//             "Error: Failed to add line {} into {}",
-//             params
-//                 .ssh
-//                 .pub_key
-//                 .clone()
-//                 .ok_or(anyhow!("error: ssh connection is not established"))?,
-//             home_ssh_path
-//         ))?;
-//     } else {
-//         tracing::warn!("Already know the host fingerprint");
-//     }
-//     Ok(())
-// }
 
 pub fn run_command(cmd: &str) -> Result<()> {
     std::process::Command::new("sh")
@@ -125,5 +47,58 @@ pub fn run_command(cmd: &str) -> Result<()> {
         .arg(cmd)
         .status()
         .context("failed to run command")?;
+    Ok(())
+}
+
+pub fn sops_update_age_key(config_path: &str, key_name: &str, key_value: &str) -> Result<()> {
+    let sops_path = format!("{}/.sops.yaml", config_path);
+    let contents = fs::read_to_string(&sops_path)?;
+    let mut sops: Value = serde_yaml::from_str(&contents)?;
+    tracing::debug!("SOPS contents:\n{:#?}", sops);
+    let sops_copy = sops.clone();
+    let key_list = sops
+        .get_mut("keys")
+        .ok_or(anyhow!("Error: No 'keys' in .sops.yaml: {:?}", sops_copy))?;
+
+    let key_list_debug = key_list.clone();
+    let field_list = key_list
+        .get_mut("users")
+        .ok_or(anyhow!("No 'users' in .sops.yaml: {:?}", key_list_debug))?
+        .as_sequence_mut()
+        .ok_or(anyhow!(
+            "'users' should be a sequence: {:?}",
+            key_list_debug
+        ))?;
+
+    let mut found = false;
+    for entry in field_list.iter_mut() {
+        if let Some(anchor) = entry.as_str() {
+            tracing::debug!("{anchor}");
+            if anchor.contains(&key_name) {
+                *entry = Value::String(key_value.to_string());
+                found = true;
+                tracing::info!("Updated existing {key_name} key");
+                break;
+            }
+        }
+    }
+
+    if !found {
+        tracing::info!("Adding new {key_name} key with {key_value}");
+        field_list.push(Value::String(key_value.to_string()));
+    }
+
+    tracing::debug!("New SOPS contents:\n{:#?}", sops);
+
+    // // Convert back to YAML and inject anchors manually
+    // let mut out = serde_yaml::to_string(&sops)?;
+    // if !found {
+    //     let needle = format!("- {}", key_value);
+    //     let replacement = format!("- &{} {}", key_name, key_value);
+    //     out = out.replacen(&needle, &replacement, 1);
+    // }
+
+    // fs::write(&sops_path, out)?;
+
     Ok(())
 }
