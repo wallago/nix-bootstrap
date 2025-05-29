@@ -141,6 +141,10 @@ fn generate_age_key(config: &Config, ssh: &ssh::SshSession) -> Result<()> {
     tracing::debug!("ssh pub key to age: {}", host_age_key.to_string());
 
     tracing::info!("Updating .sops.yaml");
-    helpers::sops_update_age_key(&config.path, &config.hostname, &host_age_key.to_string())?;
+    helpers::sops_update_age_key(
+        &config.path,
+        &format!("{}_{}", ssh.user, config.hostname,),
+        &host_age_key.to_string(),
+    )?;
     Ok(())
 }

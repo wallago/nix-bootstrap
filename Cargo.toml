@@ -11,7 +11,6 @@ ctrlc = "3.4.6"
 dirs2 = "3.0.1"
 nix = "0.29.0"
 rand = "0.8"
-serde_yaml = "0.9.34"
 ssh-key = { version = "0.6.7", features = ["ed25519"] }
 ssh2 = "0.9.5"
 tempfile = "3.19.1"
