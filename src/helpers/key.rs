@@ -1,56 +1,12 @@
-use std::fs::{self};
+use std::{
+    fs::{self},
+    path::PathBuf,
+};
 
-use anyhow::{Context, Result};
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, Stdout};
+use anyhow::Result;
 
-pub async fn ask_yes_no(prompt: &str) -> Result<bool> {
-    let border = "#".repeat(prompt.len() + 11) + "\n";
-
-    let mut stdout = io::stdout();
-    stdout
-        .write_all(border.as_bytes())
-        .await
-        .context("Failed to write in stdout for [y/N]")?;
-    let input = enter_input(Some(&mut stdout), &format!("{prompt} [y/N]: ")).await?;
-    stdout
-        .write_all(border.as_bytes())
-        .await
-        .context("Failed to write in stdout for [y/N]")?;
-
-    Ok(matches!(input.trim().to_lowercase().as_str(), "y" | "yes"))
-}
-
-pub async fn enter_input(stdout: Option<&mut Stdout>, prompt: &str) -> Result<String> {
-    let stdout = match stdout {
-        Some(stdout) => stdout,
-        None => &mut io::stdout(),
-    };
-    stdout
-        .write_all(prompt.as_bytes())
-        .await
-        .context("Failed to write in stdout for [y/N]")?;
-    stdout.flush().await.context("Flushing stdout failed")?;
-
-    let mut input = String::new();
-    let mut reader = BufReader::new(io::stdin());
-    reader
-        .read_line(&mut input)
-        .await
-        .context("Failed to read stdin for [y/N]")?;
-    Ok(input)
-}
-
-pub fn run_command(cmd: &str) -> Result<()> {
-    std::process::Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
-        .status()
-        .context("failed to run command")?;
-    Ok(())
-}
-
-pub fn sops_update_age_key(config_path: &str, key_name: &str, key_value: &str) -> Result<()> {
-    let sops_path = format!("{}/.sops.yaml", config_path);
+pub fn sops_update_age_key(config_path: PathBuf, key_name: &str, key_value: &str) -> Result<()> {
+    let sops_path = format!("{}/.sops.yaml", config_path.display());
     let mut lines = fs::read_to_string(&sops_path)?
         .lines()
         .map(|s| s.to_string())
@@ -146,8 +102,26 @@ fn update_sops_key(
 
             tracing::info!("Update key added into SOPS for {key_name}");
             fs::write(sops_path, lines.join("\n"))?;
-            return Ok(true);
+            Ok(true)
+        } else {
+            Ok(false)
         }
+    } else {
+        Ok(false)
     }
-    Ok(false)
+}
+
+pub fn ssh_update_public_key(config_path: PathBuf, host: &str, ssh_pk: &str) -> Result<()> {
+    let ssh_pk_path = format!(
+        "{}/hosts/{}/ssh_host_ed25519_key.pub",
+        config_path.display(),
+        host
+    );
+    Ok(fs::write(ssh_pk_path, ssh_pk)?)
+}
+
+pub fn get_host_ssh_public_key() -> Result<String> {
+    let ssh_pk_path = "/etc/ssh/ssh_host_ed25519_key.pub";
+    let ssh_pk = fs::read_to_string(ssh_pk_path)?;
+    Ok(ssh_pk.trim().to_string())
 }

@@ -44,11 +44,13 @@ impl SshSession {
             None => "nixos",
         };
 
-        let new_user =
-            helpers::enter_input(None, &format!("Enter ssh user (default: {current_user}):"))
-                .await?
-                .trim()
-                .to_string();
+        let new_user = helpers::input::enter_input(
+            None,
+            &format!("Enter ssh user (default: {current_user}):"),
+        )
+        .await?
+        .trim()
+        .to_string();
         if !new_user.is_empty() {
             current_user = &new_user
         }
@@ -64,11 +66,14 @@ impl SshSession {
             .to_openssh()
             .context("Host public key parsing to open ssh format failed")?;
 
-        if !helpers::ask_yes_no(&format!("Do you want to use SSH agent to connect",)).await? {
-            if !helpers::ask_yes_no(&format!("Do you want to use SSH agent to connect",)).await? {
+        if !helpers::input::ask_yes_no(&format!("Do you want to use SSH agent to connect",)).await?
+        {
+            if !helpers::input::ask_yes_no(&format!("Do you want to use SSH agent to connect",))
+                .await?
+            {
                 return Err(anyhow!("No valide SSH authentication method was selected"));
             } else {
-                let password = helpers::enter_input(None, "Enter ssh password:")
+                let password = helpers::input::enter_input(None, "Enter ssh password:")
                     .await?
                     .trim()
                     .to_string();
