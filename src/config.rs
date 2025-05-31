@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Parser;
 
+use crate::logic::BlockDevice;
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Args {
@@ -14,17 +16,21 @@ pub struct Args {
     #[arg(short = 'd', long = "ssh-dest", default_value_t = String::from("127.0.0.1"))]
     pub ssh_dest: String,
 
-    /// Target SSH password
-    #[arg(short = 'w', long = "ssh-passwd")]
-    pub ssh_passwd: Option<String>,
+    /// Target SSH user
+    #[arg(short = 'u', long = "ssh-user", default_value_t = String::from("nixos"))]
+    pub ssh_user: String,
 }
 
 pub struct Config {
     pub path: Option<PathBuf>,
+    pub block_device: Option<BlockDevice>,
 }
 
 impl Config {
     pub fn new() -> Result<Self> {
-        Ok(Self { path: None })
+        Ok(Self {
+            path: None,
+            block_device: None,
+        })
     }
 }

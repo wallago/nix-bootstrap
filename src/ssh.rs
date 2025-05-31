@@ -1,9 +1,14 @@
 use std::{io::Read, net::TcpStream, path::Path};
 
 use anyhow::{Context, Result, anyhow};
+use dialoguer::Confirm;
+use dialoguer::Input;
+use dialoguer::Password;
+use dialoguer::theme::ColorfulTheme;
 use ssh_key::PublicKey;
 use ssh2::Session;
 
+use crate::config;
 use crate::helpers;
 
 pub struct SshSession {
@@ -12,40 +17,35 @@ pub struct SshSession {
     pub port: String,
     pub destination: String,
     pub user: String,
-    pub password: Option<String>,
 }
 
 impl SshSession {
-    pub async fn new(
-        port: i32,
-        destination: String,
-        user: &str,
-        password: Option<String>,
-    ) -> Result<Self> {
-        let (session, pub_key) =
-            Self::connect_and_authenticate(&port.to_string(), &destination, user, password).await?;
+    pub fn new(args: &config::Args) -> Result<Self> {
+        let (session, pub_key) = Self::connect_and_authenticate(
+            &args.ssh_port.to_string(),
+            &args.ssh_dest,
+            &args.ssh_user,
+        )?;
         tracing::info!(
             "Connecting SSH session to {}@{}:{}",
-            user,
-            destination,
-            port
+            args.ssh_user,
+            args.ssh_dest,
+            args.ssh_port
         );
 
         Ok(Self {
             session,
             pub_key,
-            port: port.to_string(),
-            destination,
-            user: user.to_string(),
-            password,
+            port: args.ssh_port.to_string(),
+            destination: args.ssh_dest.clone(),
+            user: args.ssh_user.clone(),
         })
     }
 
-    async fn connect_and_authenticate(
+    fn connect_and_authenticate(
         port: &str,
         destination: &str,
         user: &str,
-        password: Option<String>,
     ) -> Result<(Session, String)> {
         let tcp = TcpStream::connect(format!("{}:{}", destination, port))?;
         let mut sess = Session::new().context("SSH session creation failed")?;
@@ -58,23 +58,22 @@ impl SshSession {
             .to_openssh()
             .context("Host public key parsing to open ssh format failed")?;
 
-        if !helpers::input::ask_yes_no(&format!("Do you want to use SSH agent to connect",)).await?
+        if Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt("Do you want to use SSH agent to connect?")
+            .interact()?
         {
-            if !helpers::input::ask_yes_no(&format!("Do you want to use SSH agent to connect",))
-                .await?
-            {
-                return Err(anyhow!("No valide SSH authentication method was selected"));
-            } else {
-                match password {
-                    Some(password) => sess
-                        .userauth_password(user, &password)
-                        .context("SSH authentication failed by password")?,
-                    None => return Err(anyhow!("No password was set for SSH connection")),
-                };
-            }
-        } else {
+            tracing::info!("SSH authentication by agent");
             sess.userauth_agent(user)
                 .context("SSH authentication failed by agent")?;
+        } else {
+            tracing::info!("SSH authentication by password");
+
+            let password = Password::with_theme(&ColorfulTheme::default())
+                .with_prompt("Enter ssh password")
+                .allow_empty_password(false)
+                .interact()?;
+            sess.userauth_password(user, &password)
+                .context("SSH authentication failed by password")?;
         }
 
         if !sess.authenticated() {
@@ -84,42 +83,19 @@ impl SshSession {
         Ok((sess, pub_key))
     }
 
-    pub async fn reconnect(&mut self) -> Result<()> {
-        let new_user = helpers::input::enter_input(
-            None,
-            &format!(
-                "Enter ssh user if you want to change it (actual: {}):",
-                self.user
-            ),
-        )
-        .await?
-        .trim()
-        .to_string();
+    pub fn reconnect(&mut self) -> Result<()> {
+        let new_user = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Enter ssh user")
+            .default(self.user.clone())
+            .allow_empty(false)
+            .show_default(true)
+            .interact_text()?;
         if !new_user.is_empty() {
             self.user = new_user
         }
 
-        let new_password = helpers::input::enter_input(
-            None,
-            &format!(
-                "Enter ssh password if you want to change it (actual: {}):",
-                self.password
-            ),
-        )
-        .await?
-        .trim()
-        .to_string();
-        if !new_password.is_empty() {
-            self.password = Some(new_password)
-        }
-
-        let (new_session, new_pub_key) = Self::connect_and_authenticate(
-            &self.port,
-            &self.destination,
-            &self.user,
-            self.password,
-        )
-        .await?;
+        let (new_session, new_pub_key) =
+            Self::connect_and_authenticate(&self.port, &self.destination, &self.user)?;
         tracing::info!(
             "Reconnecting SSH session to {}@{}:{}",
             self.user,

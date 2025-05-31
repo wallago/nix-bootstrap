@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
     let mut config = Config::new()?;
     let mut state = State::default();
     // Step 2
-    let mut ssh = ssh::SshSession::new(args.ssh_port, args.ssh_dest).await?;
+    let mut ssh = ssh::SshSession::new(&args)?;
 
     // Step 3
     let tmp_dir = helpers::temp::create_temp_dir()?;
@@ -29,18 +29,19 @@ async fn main() -> Result<()> {
     config.path = Some(nix_config_path);
 
     // Step 4
-    _ = logic::hardware::generate_target_hardware(&config, &ssh).await?;
+    _ = logic::hardware::generate_target_hardware(&config, &ssh)?;
 
     // Step 5
     logic::key::update_target_ssh_authorized_key(config.path.clone().unwrap())?;
-    // lsblk -d -J -o NAME,SIZE,MODEL,MOUNTPOINT
+    let target_block_device = logic::select_target_block_device(&ssh)?;
+    config.block_device = Some(target_block_device);
 
     // Step 6
     state.run_nixos_anywhere = logic::deploy::run_nixos_anywhere(&config, &ssh).await?;
 
     // Step 7
     if state.run_nixos_anywhere {
-        ssh.reconnect().await?;
+        ssh.reconnect();
     }
 
     // Step 8

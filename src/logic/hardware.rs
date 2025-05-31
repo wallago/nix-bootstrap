@@ -4,20 +4,22 @@ use std::io::Write;
 use crate::helpers;
 use crate::{config::Config, ssh::SshSession};
 use anyhow::{Context, Result};
+use dialoguer::Confirm;
+use dialoguer::theme::ColorfulTheme;
 
-pub async fn generate_target_hardware(config: &Config, ssh: &SshSession) -> Result<bool> {
-    if !helpers::input::ask_yes_no(&format!(
-        "Do you want to generating hardware-configuration.nix on {}@{}",
-        ssh.user, ssh.destination
-    ))
-    .await?
+pub fn generate_target_hardware(config: &Config, ssh: &SshSession) -> Result<bool> {
+    if Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!(
+            "Do you want to generating hardware-configuration.nix on {}@{}",
+            ssh.user, ssh.destination
+        ))
+        .interact()?
     {
         tracing::warn!("Skipping hardware-configuration generation");
         return Ok(false);
     }
 
-    // ssh.run_command("sudo nixos-generate-config --no-filesystems --root /mnt")?;
-    ssh.run_command("sudo nixos-generate-config --root /mnt")?;
+    ssh.run_command("sudo nixos-generate-config --no-filesystems --root /mnt")?;
     let contents = ssh.download_file("/mnt/etc/nixos/hardware-configuration.nix")?;
     let local_path = format!(
         "{}/nixos/hardware-configuration.nix",
