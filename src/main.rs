@@ -39,24 +39,28 @@ async fn main() -> Result<()> {
     let mut ssh = ssh::SshSession::new(ssh_port, target_dest).await?;
 
     // Step 3
-    let nix_config_path = logic::nix_starter::initialize_nix_starter_config()?;
+    let tmp_dir = helpers::temp::create_temp_dir()?;
+    let nix_config_path = logic::git::initialize_nix_starter_config(&tmp_dir)?;
     config.path = Some(nix_config_path);
 
     // Step 4
     _ = logic::hardware::generate_target_hardware(&config, &ssh).await?;
 
-    // 7. ❌ update nix-starter-config to know host ssh pub key
+    // Step 5
+    logic::key::update_target_ssh_authorized_key(config.path.clone().unwrap())?;
+
+    // Step 6
     state.run_nixos_anywhere = logic::deploy::run_nixos_anywhere(&config, &ssh).await?;
 
-    // 9. ✅ reconnect ssh connection with the new config
+    // Step 7
     if state.run_nixos_anywhere {
         ssh.reconnect().await?;
     }
 
-    // 10. ✅ get ssh ed25519 key and generate `age` key
-    // 11. ✅ update `.sops.yaml` and `ssh_host_ed25519_key.pub`
-    logic::key::generate_age_key(&config, &ssh)?;
+    // Step 8
+    // logic::key::generate_age_key(&config, &ssh)?;
 
+    // Step 9
     // 12. ❌ use `nixos-anywhere` or something else to deploy the final nix config into target
     tracing::info!("Success!");
     Ok(())

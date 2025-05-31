@@ -1,4 +1,4 @@
 pub mod deploy;
+pub mod git;
 pub mod hardware;
 pub mod key;
-pub mod nix_starter;

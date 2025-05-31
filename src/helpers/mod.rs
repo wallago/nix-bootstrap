@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 
 pub mod input;
-pub mod key;
+pub mod temp;
 
 pub fn run_command(cmd: &str) -> Result<()> {
     std::process::Command::new("sh")

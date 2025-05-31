@@ -15,14 +15,14 @@ pub async fn run_nixos_anywhere(config: &Config, ssh: &SshSession) -> Result<boo
         ssh.destination,
         ssh.port,
         config.path.clone().unwrap().display(),
-        config.hostname
+        "plankton"
     );
 
     helpers::run_command(&format!(
         "nix run github:nix-community/nixos-anywhere -- --ssh-port {} --flake {}#{} {}@{}",
         ssh.port,
         config.path.clone().unwrap().display(),
-        config.hostname,
+        "plankton",
         ssh.user,
         ssh.destination,
     ))?;
