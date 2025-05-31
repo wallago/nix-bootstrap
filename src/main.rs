@@ -17,26 +17,11 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Step 1
-    let mut config = Config::new(config::Args::parse())?;
+    let args = config::Args::parse();
+    let mut config = Config::new()?;
     let mut state = State::default();
-    let mut target_dest =
-        helpers::input::enter_input(None, "Enter ssh target destination (default: 127.0.0.1):")
-            .await?
-            .trim()
-            .to_string();
-    if target_dest.is_empty() {
-        target_dest = "127.0.0.1".to_string();
-    }
-    let mut ssh_port = helpers::input::enter_input(None, "Enter ssh port (default: 22):")
-        .await?
-        .trim()
-        .to_string();
-    if ssh_port.is_empty() {
-        ssh_port = "22".to_string();
-    }
-
     // Step 2
-    let mut ssh = ssh::SshSession::new(ssh_port, target_dest).await?;
+    let mut ssh = ssh::SshSession::new(args.ssh_port, args.ssh_dest).await?;
 
     // Step 3
     let tmp_dir = helpers::temp::create_temp_dir()?;
@@ -48,6 +33,7 @@ async fn main() -> Result<()> {
 
     // Step 5
     logic::key::update_target_ssh_authorized_key(config.path.clone().unwrap())?;
+    // lsblk -d -J -o NAME,SIZE,MODEL,MOUNTPOINT
 
     // Step 6
     state.run_nixos_anywhere = logic::deploy::run_nixos_anywhere(&config, &ssh).await?;

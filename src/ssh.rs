@@ -12,15 +12,21 @@ pub struct SshSession {
     pub port: String,
     pub destination: String,
     pub user: String,
+    pub password: Option<String>,
 }
 
 impl SshSession {
-    pub async fn new(port: String, destination: String) -> Result<Self> {
-        let (session, pub_key, current_user) =
-            Self::connect_and_authenticate(None, &port, &destination).await?;
+    pub async fn new(
+        port: i32,
+        destination: String,
+        user: &str,
+        password: Option<String>,
+    ) -> Result<Self> {
+        let (session, pub_key) =
+            Self::connect_and_authenticate(&port.to_string(), &destination, user, password).await?;
         tracing::info!(
             "Connecting SSH session to {}@{}:{}",
-            current_user,
+            user,
             destination,
             port
         );
@@ -28,33 +34,19 @@ impl SshSession {
         Ok(Self {
             session,
             pub_key,
-            user: current_user,
-            port,
+            port: port.to_string(),
             destination,
+            user: user.to_string(),
+            password,
         })
     }
 
     async fn connect_and_authenticate(
-        user: Option<&str>,
         port: &str,
         destination: &str,
-    ) -> Result<(Session, String, String)> {
-        let mut current_user = match user {
-            Some(user) => user,
-            None => "nixos",
-        };
-
-        let new_user = helpers::input::enter_input(
-            None,
-            &format!("Enter ssh user (default: {current_user}):"),
-        )
-        .await?
-        .trim()
-        .to_string();
-        if !new_user.is_empty() {
-            current_user = &new_user
-        }
-
+        user: &str,
+        password: Option<String>,
+    ) -> Result<(Session, String)> {
         let tcp = TcpStream::connect(format!("{}:{}", destination, port))?;
         let mut sess = Session::new().context("SSH session creation failed")?;
         sess.set_tcp_stream(tcp);
@@ -73,15 +65,15 @@ impl SshSession {
             {
                 return Err(anyhow!("No valide SSH authentication method was selected"));
             } else {
-                let password = helpers::input::enter_input(None, "Enter ssh password:")
-                    .await?
-                    .trim()
-                    .to_string();
-                sess.userauth_password(current_user, &password)
-                    .context("SSH authentication failed by password")?;
+                match password {
+                    Some(password) => sess
+                        .userauth_password(user, &password)
+                        .context("SSH authentication failed by password")?,
+                    None => return Err(anyhow!("No password was set for SSH connection")),
+                };
             }
         } else {
-            sess.userauth_agent(current_user)
+            sess.userauth_agent(user)
                 .context("SSH authentication failed by agent")?;
         }
 
@@ -89,13 +81,45 @@ impl SshSession {
             return Err(anyhow!("SSH connection authentication failed"));
         }
 
-        Ok((sess, pub_key, current_user.to_string()))
+        Ok((sess, pub_key))
     }
 
     pub async fn reconnect(&mut self) -> Result<()> {
-        let (new_session, new_pub_key, current_user) =
-            Self::connect_and_authenticate(Some(&self.user), &self.port, &self.destination).await?;
-        self.user = current_user;
+        let new_user = helpers::input::enter_input(
+            None,
+            &format!(
+                "Enter ssh user if you want to change it (actual: {}):",
+                self.user
+            ),
+        )
+        .await?
+        .trim()
+        .to_string();
+        if !new_user.is_empty() {
+            self.user = new_user
+        }
+
+        let new_password = helpers::input::enter_input(
+            None,
+            &format!(
+                "Enter ssh password if you want to change it (actual: {}):",
+                self.password
+            ),
+        )
+        .await?
+        .trim()
+        .to_string();
+        if !new_password.is_empty() {
+            self.password = Some(new_password)
+        }
+
+        let (new_session, new_pub_key) = Self::connect_and_authenticate(
+            &self.port,
+            &self.destination,
+            &self.user,
+            self.password,
+        )
+        .await?;
         tracing::info!(
             "Reconnecting SSH session to {}@{}:{}",
             self.user,
