@@ -1,3 +1,5 @@
+use std::{fs, path::PathBuf};
+
 use anyhow::Result;
 use dialoguer::{Select, theme::ColorfulTheme};
 use serde::{Deserialize, Serialize};
@@ -31,7 +33,7 @@ impl BlockDevice {
     }
 }
 
-pub fn select_target_block_device(ssh: &SshSession) -> Result<BlockDevice> {
+pub fn select_target_block_device(ssh: &SshSession, config_path: &PathBuf) -> Result<BlockDevice> {
     let target_block_devices = serde_json::from_str::<BlockDevices>(
         &ssh.run_command("lsblk -d -J -o NAME,SIZE,MODEL,MOUNTPOINT")?,
     )?;
@@ -56,5 +58,13 @@ pub fn select_target_block_device(ssh: &SshSession) -> Result<BlockDevice> {
         "Selected target block device: {}",
         selected_target_block_device.name
     );
+
+    write_block_device(config_path, &selected_target_block_device.name)?;
+
     Ok(selected_target_block_device)
+}
+
+fn write_block_device(config_path: &PathBuf, block_device: &str) -> Result<()> {
+    let ssh_pk_path = format!("{}/nixos/disk-device.txt", config_path.display(),);
+    Ok(fs::write(ssh_pk_path, format!("/dev/{}", block_device))?)
 }

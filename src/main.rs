@@ -33,7 +33,8 @@ async fn main() -> Result<()> {
 
     // Step 5
     logic::key::update_target_ssh_authorized_key(config.path.clone().unwrap())?;
-    let target_block_device = logic::select_target_block_device(&ssh)?;
+    let target_block_device =
+        logic::select_target_block_device(&ssh, &config.path.clone().unwrap())?;
     config.block_device = Some(target_block_device);
 
     // Step 6

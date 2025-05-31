@@ -8,7 +8,7 @@ use dialoguer::Confirm;
 use dialoguer::theme::ColorfulTheme;
 
 pub fn generate_target_hardware(config: &Config, ssh: &SshSession) -> Result<bool> {
-    if Confirm::with_theme(&ColorfulTheme::default())
+    if !Confirm::with_theme(&ColorfulTheme::default())
         .with_prompt(format!(
             "Do you want to generating hardware-configuration.nix on {}@{}",
             ssh.user, ssh.destination

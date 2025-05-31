@@ -2,9 +2,14 @@ use crate::config::Config;
 use crate::helpers;
 use crate::ssh::SshSession;
 use anyhow::Result;
+use dialoguer::Confirm;
+use dialoguer::theme::ColorfulTheme;
 
 pub async fn run_nixos_anywhere(config: &Config, ssh: &SshSession) -> Result<bool> {
-    if !helpers::input::ask_yes_no("Do you want to run nixos-anywhere").await? {
+    if !Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Do you want to run nixos-anywhere?")
+        .interact()?
+    {
         tracing::warn!("Skipping nixos-anywhere");
         return Ok(false);
     }
