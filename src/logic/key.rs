@@ -153,12 +153,17 @@ pub fn update_target_ssh_authorized_key(config_path: PathBuf) -> Result<()> {
 }
 
 fn get_host_ssh_public_key() -> Result<String> {
-    let ssh_pk_path = "/etc/ssh/ssh_host_ed25519_key.pub";
+    let ssh_pk_path = format!(
+        "{}/.ssh/id_ed25519.pub",
+        dirs2::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Target home directory not found"))?
+            .display()
+    );
     let ssh_pk = fs::read_to_string(ssh_pk_path)?;
     Ok(ssh_pk.trim().to_string())
 }
 
 fn write_host_ssh_public_key(config_path: PathBuf, ssh_pk: &str) -> Result<()> {
-    let ssh_pk_path = format!("{}/nixos/ssh_host_ed25519_key.pub", config_path.display(),);
+    let ssh_pk_path = format!("{}/nixos/ssh_host_ed25519_key.pub", config_path.display());
     Ok(fs::write(ssh_pk_path, ssh_pk)?)
 }
