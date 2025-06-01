@@ -5,7 +5,7 @@ use anyhow::Result;
 use dialoguer::Confirm;
 use dialoguer::theme::ColorfulTheme;
 
-pub async fn run_nixos_anywhere(config: &Config, ssh: &SshSession) -> Result<bool> {
+pub fn run_nixos_anywhere(config: &Config, ssh: &SshSession) -> Result<bool> {
     if !Confirm::with_theme(&ColorfulTheme::default())
         .with_prompt("Do you want to run nixos-anywhere?")
         .interact()?
@@ -23,7 +23,7 @@ pub async fn run_nixos_anywhere(config: &Config, ssh: &SshSession) -> Result<boo
         "plankton"
     );
 
-    helpers::run_command(&format!(
+    helpers::run_command_with_stdout(&format!(
         "nix run github:nix-community/nixos-anywhere -- --ssh-port {} --flake {}#{} {}@{}",
         ssh.port,
         config.path.clone().unwrap().display(),

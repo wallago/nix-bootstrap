@@ -4,13 +4,11 @@ use anyhow::Result;
 use tempfile::TempDir;
 
 pub fn initialize_nix_starter_config(tmp_dir: &TempDir) -> Result<PathBuf> {
-    let config_path = PathBuf::from_str("/persist/home/wallago/Perso/nix-starter-config").unwrap();
-    let config_repo = git2::Repository::discover(&config_path)?;
-    // let config_path = tmp_dir.path().join("nix-starter-config");
-    // let config_repo = git2::Repository::clone(
-    //     "https://github.com/wallago/nix-starter-config",
-    //     &config_path,
-    // )?;
+    let config_path = tmp_dir.path().join("nix-starter-config");
+    let config_repo = git2::Repository::clone(
+        "https://github.com/wallago/nix-starter-config",
+        &config_path,
+    )?;
     if config_repo.is_bare() {
         anyhow::bail!("Cloned repository is a bare")
     }
