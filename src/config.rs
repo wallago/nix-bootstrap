@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Parser;
 
-use crate::logic::BlockDevice;
+use crate::logic::disk::BlockDevice;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -25,6 +25,7 @@ pub struct Config {
     pub path: Option<PathBuf>,
     pub block_device: Option<BlockDevice>,
     pub hardware_config: Option<Vec<u8>>,
+    pub host: Option<String>,
 }
 
 impl Config {
@@ -33,6 +34,7 @@ impl Config {
             path: None,
             block_device: None,
             hardware_config: None,
+            host: None,
         })
     }
 }
