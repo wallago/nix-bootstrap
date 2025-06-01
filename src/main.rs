@@ -12,8 +12,7 @@ struct State {
     run_nixos_anywhere: bool,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Step 1
@@ -29,21 +28,22 @@ async fn main() -> Result<()> {
     config.path = Some(nix_config_path);
 
     // Step 4
-    let target_hardware_config = logic::hardware::generate_target_hardware(&config, &ssh)?;
+    let target_hardware_config = logic::hardware::generate_target_hardware_config(&ssh)?;
     config.hardware_config = Some(target_hardware_config);
+    logic::hardware::write_target_hardware_starter_config(&config)?;
 
     // Step 5
     logic::key::update_target_ssh_authorized_key(config.path.clone().unwrap())?;
     let target_block_device =
-        logic::select_target_block_device(&ssh, &config.path.clone().unwrap())?;
+        logic::disk::select_target_block_device(&ssh, &config.path.clone().unwrap())?;
     config.block_device = Some(target_block_device);
 
     // Step 6
-    state.run_nixos_anywhere = logic::deploy::run_nixos_anywhere(&config, &ssh).await?;
+    state.run_nixos_anywhere = logic::deploy::run_nixos_anywhere(&config, &ssh)?;
 
     // Step 7
     if state.run_nixos_anywhere {
-        ssh.reconnect();
+        ssh.reconnect()?;
     }
 
     // Step 9
@@ -52,12 +52,18 @@ async fn main() -> Result<()> {
     config.path = Some(nix_config_path);
 
     // Step 10
+    let host = logic::nix::select_config_host(&config.path.clone().unwrap())?;
+    config.host = Some(host);
+    logic::hardware::write_target_hardware_config(&config, &config.host.clone().unwrap())?;
 
-    // Step 8
-    // logic::key::generate_age_key(&config, &ssh)?;
+    // Step 11
+    logic::key::generate_age_key(&config, &ssh)?;
 
-    // Step 9
-    // 12. ❌ use `nixos-anywhere` or something else to deploy the final nix config into target
+    // Step 12
+    logic::nix::run_nixos_rebuild(&config, &ssh)?;
+
+    // Step 13
+    // maybe suggest a git push :) cause the repo will be erase at the end
     tracing::info!("Success!");
     Ok(())
 }
