@@ -29,7 +29,8 @@ async fn main() -> Result<()> {
     config.path = Some(nix_config_path);
 
     // Step 4
-    _ = logic::hardware::generate_target_hardware(&config, &ssh)?;
+    let target_hardware_config = logic::hardware::generate_target_hardware(&config, &ssh)?;
+    config.hardware_config = Some(target_hardware_config);
 
     // Step 5
     logic::key::update_target_ssh_authorized_key(config.path.clone().unwrap())?;
@@ -44,6 +45,13 @@ async fn main() -> Result<()> {
     if state.run_nixos_anywhere {
         ssh.reconnect();
     }
+
+    // Step 9
+    let tmp_dir = helpers::temp::create_temp_dir()?;
+    let nix_config_path = logic::git::initialize_nix_config(&tmp_dir)?;
+    config.path = Some(nix_config_path);
+
+    // Step 10
 
     // Step 8
     // logic::key::generate_age_key(&config, &ssh)?;

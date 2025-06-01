@@ -24,6 +24,7 @@ pub struct Args {
 pub struct Config {
     pub path: Option<PathBuf>,
     pub block_device: Option<BlockDevice>,
+    pub hardware_config: Option<Vec<u8>>,
 }
 
 impl Config {
@@ -31,6 +32,7 @@ impl Config {
         Ok(Self {
             path: None,
             block_device: None,
+            hardware_config: None,
         })
     }
 }
