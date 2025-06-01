@@ -66,14 +66,26 @@ impl SshSession {
             sess.userauth_agent(user)
                 .context("SSH authentication failed by agent")?;
         } else {
-            tracing::info!("SSH authentication by password");
+            tracing::info!("SSH authentication by password (if empty public key will be used)");
 
             let password = Password::with_theme(&ColorfulTheme::default())
                 .with_prompt("Enter ssh password")
-                .allow_empty_password(false)
+                .allow_empty_password(true)
                 .interact()?;
-            sess.userauth_password(user, &password)
+            if password.is_empty() {
+                let home_dir = dirs2::home_dir()
+                    .ok_or_else(|| anyhow::anyhow!("Host home directory isn't found"))?;
+                sess.userauth_pubkey_file(
+                    user,
+                    Some(home_dir.join(".ssh/id_ed25519.pub").as_path()),
+                    home_dir.join(".ssh/id_ed25519").as_path(),
+                    None,
+                )
                 .context("SSH authentication failed by password")?;
+            } else {
+                sess.userauth_password(user, &password)
+                    .context("SSH authentication failed by password")?;
+            }
         }
 
         if !sess.authenticated() {
@@ -110,10 +122,21 @@ impl SshSession {
     pub fn run_command(&self, cmd: &str) -> Result<String> {
         let mut channel = self.session.channel_session().unwrap();
         channel.exec(cmd)?;
-        let mut s = String::new();
-        channel.read_to_string(&mut s)?;
+        let mut stdout = String::new();
+        channel.read_to_string(&mut stdout)?;
+        let mut stderr = String::new();
+        channel.stderr().read_to_string(&mut stderr)?;
         channel.wait_close()?;
-        Ok(s)
+        let status = channel.exit_status()?;
+        if status != 0 {
+            anyhow::bail!(
+                "SSH command fail with exit status ({}) and stderr: \n{}",
+                status,
+                stderr
+            )
+        }
+
+        Ok(stdout)
     }
 
     pub fn download_file(&self, remote_path: &str) -> Result<Vec<u8>> {
