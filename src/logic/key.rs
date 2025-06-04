@@ -3,11 +3,11 @@ use std::{
     path::PathBuf,
 };
 
-use crate::config::Config;
 use crate::ssh::SshSession;
+use crate::{config::Config, helpers};
 use anyhow::Result;
 
-pub fn generate_age_key(config: &Config, ssh: &SshSession) -> Result<()> {
+pub fn generate_age_key(config: &Config, ssh: &SshSession) -> Result<String> {
     let host = config.host.clone().unwrap();
     tracing::info!(
         "Generating an age key for {host} based on the ssh key for {}@{}",
@@ -15,19 +15,23 @@ pub fn generate_age_key(config: &Config, ssh: &SshSession) -> Result<()> {
         ssh.destination
     );
 
-    let host_age_key = ssh_to_age::convert::ssh_public_key_to_age(&ssh.pub_key)?;
+    let target_pk_age = ssh_to_age::convert::ssh_public_key_to_age(&ssh.pub_key)?;
     tracing::debug!("ssh target public key: {}", ssh.pub_key);
-    tracing::debug!("ssh target public key to age: {}", host_age_key.to_string());
+    tracing::debug!(
+        "ssh target public key to age: {}",
+        target_pk_age.to_string()
+    );
 
     tracing::info!("Updating .sops.yaml");
     config_sops_update_age_key(
         config.path.clone().unwrap(),
-        &format!("{}_{}", ssh.user, config.host.clone().unwrap()),
-        &host_age_key.to_string(),
+        &format!("{}", config.host.clone().unwrap()),
+        &target_pk_age.to_string(),
     )?;
 
     tracing::info!("Updating target ssh public key");
-    write_target_ssh_public_key(config.path.clone().unwrap(), &host, &ssh.pub_key)
+    write_target_ssh_public_key(config.path.clone().unwrap(), &host, &ssh.pub_key)?;
+    Ok(target_pk_age)
 }
 
 fn config_sops_update_age_key(config_path: PathBuf, key_name: &str, key_value: &str) -> Result<()> {
@@ -167,4 +171,18 @@ fn get_host_ssh_public_key() -> Result<String> {
 fn write_host_ssh_public_key(config_path: PathBuf, ssh_pk: &str) -> Result<()> {
     let ssh_pk_path = format!("{}/nixos/ssh_host_ed25519_key.pub", config_path.display());
     Ok(fs::write(ssh_pk_path, ssh_pk)?)
+}
+
+pub fn update_encrypted_file_keys(config: &Config) -> Result<()> {
+    tracing::info!("Update encryted file with target age key");
+    let encryted_file_path = format!(
+        "{}/nixos/common/secrets.yaml",
+        config.path.clone().unwrap().display()
+    );
+    let updated_encrypted_file = helpers::run_command(&format!(
+        "sops -r --add-age {} {}",
+        config.pk_age.clone().unwrap(),
+        encryted_file_path
+    ))?;
+    Ok(fs::write(encryted_file_path, updated_encrypted_file)?)
 }

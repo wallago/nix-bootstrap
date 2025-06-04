@@ -2097,9 +2097,9 @@ dependencies = [
 
 [[package]]
 name = "ssh-to-age"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "233b6eaf68d5a6634482de3e07072ac8f9dbb865d16e0d80ad0d88cee007eb7c"
+checksum = "e54911449eb382b33a9704c4ee4c9e65f4a7a92dffa94ff7c15c85728ab60b91"
 dependencies = [
  "anyhow",
  "bech32 0.11.0",

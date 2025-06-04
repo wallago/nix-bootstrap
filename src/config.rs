@@ -16,9 +16,9 @@ pub struct Args {
     #[arg(short = 'd', long = "ssh-dest", default_value_t = String::from("127.0.0.1"))]
     pub ssh_dest: String,
 
-    /// Target SSH user
-    #[arg(short = 'u', long = "ssh-user", default_value_t = String::from("nixos"))]
-    pub ssh_user: String,
+    /// Boot from ISO
+    #[arg(long, default_value_t = true)]
+    pub iso: bool,
 }
 
 pub struct Config {
@@ -26,6 +26,7 @@ pub struct Config {
     pub block_device: Option<BlockDevice>,
     pub hardware_config: Option<Vec<u8>>,
     pub host: Option<String>,
+    pub pk_age: Option<String>,
 }
 
 impl Config {
@@ -35,6 +36,7 @@ impl Config {
             block_device: None,
             hardware_config: None,
             host: None,
+            pk_age: None,
         })
     }
 }

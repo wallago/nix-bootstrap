@@ -1,8 +1,5 @@
-use std::process::Stdio;
-
 use anyhow::{Context, Result};
 
-pub mod input;
 pub mod temp;
 
 pub fn run_command_with_stdout(cmd: &str) -> Result<()> {

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use dialoguer::{Select, theme::ColorfulTheme};
+use dialoguer::{Confirm, Select, theme::ColorfulTheme};
 
 use crate::{config, helpers, ssh::SshSession};
 
@@ -24,7 +24,18 @@ pub fn select_config_host(config_path: &PathBuf) -> Result<String> {
     Ok(selected_host.to_string())
 }
 
-pub fn run_nixos_rebuild(config: &config::Config, ssh: &SshSession) -> Result<()> {
+pub fn run_nixos_rebuild(config: &config::Config, ssh: &SshSession) -> Result<bool> {
+    if !Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!(
+            "Do you want to run nixos-rebuild on {}@{}",
+            ssh.user, ssh.destination
+        ))
+        .interact()?
+    {
+        tracing::warn!("Skipping nixos-rebuild");
+        return Ok(false);
+    }
+
     let config_path = config.path.clone().unwrap();
     let host = config.host.clone().unwrap();
     let ssh_host = format!("{}@{}", ssh.user, ssh.destination);
@@ -34,9 +45,9 @@ pub fn run_nixos_rebuild(config: &config::Config, ssh: &SshSession) -> Result<()
         config.path.clone().unwrap().display(),
     );
     helpers::run_command_with_stdout(&format!(
-        "NIX_SSHOPTS=\"-p {}\" nixos-rebuild --flake {}#{host} switch --target-host {ssh_host} --build-host {ssh_host}",
+        "NIX_SSHOPTS=\"-p {}\" nixos-rebuild  switch --flake {}#{host} --build-host {ssh_host} --target-host {ssh_host} --use-remote-sudo",
         ssh.port,
         config_path.display(),
     ))?;
-    Ok(())
+    Ok(true)
 }
