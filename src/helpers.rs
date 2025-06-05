@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use git2::Repository;
-use tempfile::{TempDir, tempdir};
+use serde::{Deserialize, Serialize};
+use tempfile::tempdir;
 
 pub fn git_clone_repository(name: &str) -> Result<Repository> {
     let tmp_dir = tempdir().context("Failed to create temp directory")?;
@@ -18,4 +19,26 @@ pub fn git_clone_repository(name: &str) -> Result<Repository> {
         bail!("Cloned repository is a shallow")
     }
     Ok(repo)
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiskDevices {
+    pub all: Vec<DiskDevice>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiskDevice {
+    pub name: String,
+    size: String,
+    model: Option<String>,
+    mountpoint: Option<String>,
+}
+
+impl DiskDevice {
+    pub fn get_info(&self) -> String {
+        format!(
+            "{} (size: {} / model: {:?} / mountpoint: {:?})",
+            self.name, self.size, self.model, self.mountpoint
+        )
+    }
 }

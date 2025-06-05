@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use clap::Parser;
 use tracing::info;
 
@@ -17,7 +17,7 @@ fn main() -> Result<()> {
     let mut state = state::State::default();
 
     let mut local = local::Host::new()?;
-    let remote = remote::Host::new(params.ssh_dest, params.ssh_port, &local)?;
+    let mut remote = remote::Host::new(params.ssh_dest, params.ssh_port, &local)?;
 
     if !params.use_sudo {
         local.git_clone_nix_stater_config()?;
@@ -25,17 +25,10 @@ fn main() -> Result<()> {
 
     state.get_hardware_config = remote.get_hardware_config()?;
     if state.get_hardware_config {
-        local.update_hardware_config(
-            &remote
-                .config
-                .hardware_file
-                .ok_or_else(|| anyhow!("Hardware file isn't defined"))?,
-            None,
-        )?;
-
-        //     let target_block_device =
-        //         logic::disk::select_target_block_device(&ssh, &config.path.clone().unwrap())?;
-        //     config.block_device = Some(target_block_device);
+        if local.update_hardware_config(remote.config.hardware_file.as_ref())? {
+            remote.get_disk_device()?;
+            local.update_disk_config(remote.config.disk_device.as_ref())?;
+        }
     }
 
     Ok(info!("🚀 Enjoy !"))

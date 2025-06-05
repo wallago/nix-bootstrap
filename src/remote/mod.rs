@@ -1,19 +1,23 @@
 use std::{
     io::Read,
     net::{TcpStream, ToSocketAddrs},
+    path::Path,
 };
 
 use anyhow::{Context, Result, anyhow, bail};
-use dialoguer::{Confirm, Input, Password, theme::ColorfulTheme};
+use dialoguer::{Confirm, Input, Password, Select, theme::ColorfulTheme};
 use ssh_key::PublicKey;
 use ssh2::Session;
 use tracing::{info, warn};
 
-use crate::local;
+use crate::{
+    helpers::{DiskDevice, DiskDevices},
+    local,
+};
 
 #[derive(Default)]
-struct Config {
-    disk_device: Option<String>,
+pub struct Config {
+    pub disk_device: Option<DiskDevice>,
     pub hardware_file: Option<Vec<u8>>,
     age_pk: Option<String>,
     host: Option<String>,
@@ -138,8 +142,8 @@ impl Host {
         Ok(contents)
     }
 
-    pub fn get_hardware_config(&self) -> Result<bool> {
-        tracing::info!("🔧 Get remote hardware configuration");
+    pub fn get_hardware_config(&mut self) -> Result<bool> {
+        info!("🔧 Get remote hardware configuration");
         if !Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt(format!(
                 "Do you want to get hardware-configuration.nix on {}@{}",
@@ -155,5 +159,27 @@ impl Host {
         self.config.hardware_file =
             Some(self.download_file("/tmp/etc/nixos/hardware-configuration.nix")?);
         Ok(true)
+    }
+
+    pub fn get_disk_device(&mut self) -> Result<()> {
+        let disk_devices = serde_json::from_str::<DiskDevices>(
+            &self.run_command("lsblk -d -J -o NAME,SIZE,MODEL,MOUNTPOINT")?,
+        )?;
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Select a target block device?")
+            .items(
+                &disk_devices
+                    .all
+                    .iter()
+                    .map(|disk_device| disk_device.get_info())
+                    .collect::<Vec<String>>(),
+            )
+            .interact()?;
+        let disk_device = disk_devices
+            .all
+            .get(selection)
+            .ok_or_else(|| anyhow!("Couldn't found selected disk found"))?;
+        self.config.disk_device = Some(disk_device.to_owned());
+        Ok(())
     }
 }
