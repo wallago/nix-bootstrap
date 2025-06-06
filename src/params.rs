@@ -11,7 +11,7 @@ pub struct Args {
     #[arg(short = 'd', long = "ssh-dest", default_value_t = String::from("127.0.0.1"))]
     pub ssh_dest: String,
 
-    /// Use sudo/root privileges on remote host
-    #[arg(long, default_value_t = true)]
-    pub use_sudo: bool,
+    /// Use nix iso on remote host
+    #[arg(long)]
+    pub use_iso: bool,
 }

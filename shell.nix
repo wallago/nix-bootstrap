@@ -56,5 +56,9 @@ in pkgs.mkShell {
     echo "- create-qemu-disk"
     echo "- run-qemu (--iso optional)"
     echo "- ssh-vm"
+
+    echo "Try NIX_SSHOPTS=\"-p 10022\" nixos-rebuild switch --flake /home/wallago/nix-config#octopus --build-host nixos@127.0.0.1 --target-host nixos@127.0.0.1 --use-remote-sudo"
+    echo "Try NIX_SSHOPTS=\"-p 10022\" nixos-rebuild switch --flake ../nix-starter-config#plankton --target-host nixos@127.0.0.1 --build-host nixos@127.0.0.1 --use-remote-sudo"
+    echo "Try nix run github:nix-community/nixos-anywhere -- --ssh-port 10022 --flake ../nix-starter-config#plankton nixos@127.0.0.1"
   '';
 }
