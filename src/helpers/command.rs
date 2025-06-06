@@ -2,7 +2,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
-pub fn run_command(cmd: &str) -> Result<()> {
+pub fn run(cmd: &str) -> Result<()> {
     let status = Command::new("sh")
         .arg("-c")
         .arg(cmd)
@@ -15,7 +15,7 @@ pub fn run_command(cmd: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn run_command_with_stdout(cmd: &str) -> Result<String> {
+pub fn run_with_stdout(cmd: &str) -> Result<String> {
     let output = Command::new("sh")
         .arg("-c")
         .arg(cmd)

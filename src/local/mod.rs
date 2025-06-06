@@ -16,7 +16,6 @@ use crate::{
 };
 
 struct Repo {
-    is_starter: bool,
     git: Repository,
     path: PathBuf,
     tmp_dir: TempDir,
@@ -101,40 +100,34 @@ impl Host {
 
     pub fn git_clone_nix_stater_config(&mut self) -> Result<()> {
         info!("📂 Clone nix-stater-config git repository");
-        let (repo, tmp_dir) = helpers::git::git_clone_repository("nix-stater-config")?;
+        let (repo, tmp_dir) = helpers::git::clone_repository("nix-starter-config")?;
         let repo_dir = repo.path().to_path_buf();
         let repo_path = repo_dir
             .parent()
             .context("Could not get parent path of cloned git repository")?;
         self.repo = Some(Repo {
-            is_starter: true,
             git: repo,
             path: repo_path.to_path_buf(),
             tmp_dir,
         });
-        Ok(info!(
-            "📂 Git repository is available at {}",
-            repo_path.display()
-        ))
+        info!("📂 Git repository is available at {}", repo_path.display());
+        Ok(())
     }
 
     pub fn git_clone_nix_config(&mut self) -> Result<()> {
         info!("📂 Clone nix-config git repository ");
-        let (repo, tmp_dir) = helpers::git::git_clone_repository("nix-config")?;
+        let (repo, tmp_dir) = helpers::git::clone_repository("nix-config")?;
         let repo_dir = repo.path().to_path_buf();
         let repo_path = repo_dir
             .parent()
             .context("Could not get parent path of cloned git repository")?;
         self.repo = Some(Repo {
-            is_starter: false,
             git: repo,
             path: repo_path.to_path_buf(),
             tmp_dir,
         });
-        Ok(info!(
-            "📂 Git repository is available at {}",
-            repo_path.display()
-        ))
+        info!("📂 Git repository is available at {}", repo_path.display());
+        Ok(())
     }
 
     fn get_repo(&self) -> Result<&Repo> {
@@ -154,7 +147,7 @@ impl Host {
         }
 
         info!("🚀 Deploying nix-stater-config via nixos-anywhere");
-        helpers::command::run_command(&format!(
+        helpers::command::run(&format!(
             "nix run github:nix-community/nixos-anywhere -- --ssh-port {} --flake {}#{} {}@{}",
             remote.port,
             self.get_repo()?.path.display(),
@@ -176,7 +169,7 @@ impl Host {
         }
 
         info!("🚀 Deploying nix-config via nixos-rebuild");
-        helpers::command::run_command(&format!(
+        helpers::command::run(&format!(
             "NIX_SSHOPTS=\"-p {}\" nixos-rebuild switch --flake {}#{} --build-host {}@{} --target-host {}@{} --use-remote-sudo",
             remote.port,
             self.get_repo()?.path.display(),
@@ -193,13 +186,8 @@ impl Host {
     pub fn update_hardware_config(&self, contents: &Vec<u8>) -> Result<bool> {
         info!("📝 Update hardware config");
         let repo = self.get_repo()?;
-        let hardware_config_path = match repo.is_starter {
-            true => format!("{}/nixos/hardware-configuration.nix", repo.path.display()),
-            false => {
-                warn!("❗ Not available for nix-config (only for the stater)");
-                return Ok(false);
-            }
-        };
+        let hardware_config_path =
+            format!("{}/nixos/hardware-configuration.nix", repo.path.display());
         fs::write(hardware_config_path, contents)?;
         Ok(true)
     }
@@ -207,13 +195,7 @@ impl Host {
     pub fn update_disk_config(&self, contents: &str) -> Result<bool> {
         info!("📝 Update disk config");
         let repo = self.get_repo()?;
-        let disk_config_path = match repo.is_starter {
-            true => format!("{}/nixos/disk-device.txt", repo.path.display()),
-            false => {
-                warn!("❗ Not available for nix-config (only for the stater)");
-                return Ok(false);
-            }
-        };
+        let disk_config_path = format!("{}/nixos/disk-device.txt", repo.path.display());
         fs::write(disk_config_path, format!("/dev/{}", contents))?;
         Ok(true)
     }
@@ -221,13 +203,7 @@ impl Host {
     pub fn update_ssh_public_key(&self) -> Result<bool> {
         info!("📝 Update ssh public key");
         let repo = self.get_repo()?;
-        let ssh_public_key_path = match repo.is_starter {
-            true => format!("{}/nixos/ssh_authorized_key.pub", repo.path.display()),
-            false => {
-                warn!("❗ Not available for nix-config (only for the stater)");
-                return Ok(false);
-            }
-        };
+        let ssh_public_key_path = format!("{}/nixos/ssh_authorized_key.pub", repo.path.display());
         fs::write(ssh_public_key_path, &self.ssh_pk)?;
         Ok(true)
     }
@@ -314,12 +290,11 @@ impl Host {
 
     pub fn get_config_host(&mut self) -> Result<()> {
         let repo = self.get_repo()?;
-        let hosts = serde_json::from_str::<Vec<String>>(
-            &helpers::command::run_command_with_stdout(&format!(
+        let hosts =
+            serde_json::from_str::<Vec<String>>(&helpers::command::run_with_stdout(&format!(
                 " nix eval --json {}#nixosConfigurations --apply builtins.attrNames",
                 repo.path.display()
-            ))?,
-        )?;
+            ))?)?;
         let selection = Select::with_theme(&ColorfulTheme::default())
             .with_prompt("📣 Select a target block device?")
             .items(&hosts)
@@ -330,6 +305,30 @@ impl Host {
                 .ok_or_else(|| anyhow!("Selected host doesn't be found"))?
                 .clone(),
         );
+        Ok(())
+    }
+
+    pub fn update_encrypt_file_keys(&self, age_pk: &str) -> Result<()> {
+        info!("📝 Update encryt file with remote age key");
+        let repo = self.get_repo()?;
+        let encryt_file_path = format!("{}/nixos/common/secrets.yaml", repo.path.display());
+        let contents = helpers::command::run_with_stdout(&format!(
+            "sops -r --add-age {} {}",
+            age_pk, encryt_file_path
+        ))?;
+        Ok(fs::write(encryt_file_path, contents)?)
+    }
+
+    pub fn config_changes(&self) -> Result<()> {
+        info!("🔁 Untrack config changes");
+        let repo = self.get_repo()?;
+        for file in helpers::git::untrack_changes(&repo.git)? {
+            info!(
+                "{}:\n{}",
+                file,
+                fs::read_to_string(format!("{}/{}", repo.path.display(), file))?
+            );
+        }
         Ok(())
     }
 }

@@ -45,27 +45,29 @@ fn main() -> Result<()> {
     let age_key = remote.get_age_key()?;
     if age_key {
         local.update_sops(remote.config.get_age_key()?)?;
+        local.update_encrypt_file_keys(remote.config.get_age_key()?)?;
     }
+    local.config_changes()?;
     local.deploy_nix_config(&remote)?;
 
-    if hardware_config {
-        info!(
-            "Content of hardware config:\n{}",
-            String::from_utf8(remote.config.get_hardware_file()?.to_owned())?
-        );
-    }
-    if disk_device {
-        info!(
-            "Disk device selected:\n{:#?}",
-            remote.config.get_disk_device()?
-        );
-    }
-    if age_key {
-        info!(
-            "Content of sops:\n{}",
-            String::from_utf8(remote.config.get_hardware_file()?.to_owned())?
-        );
-    }
+    // if hardware_config {
+    //     info!(
+    //         "Content of hardware config:\n{}",
+    //         String::from_utf8(remote.config.get_hardware_file()?.to_owned())?
+    //     );
+    // }
+    // if disk_device {
+    //     info!(
+    //         "Disk device selected:\n{:#?}",
+    //         remote.config.get_disk_device()?
+    //     );
+    // }
+    // if age_key {
+    //     info!(
+    //         "Content of sops:\n{}",
+    //         String::from_utf8(remote.config.get_hardware_file()?.to_owned())?
+    //     );
+    // }
 
     Ok(info!("🚀 Enjoy !"))
 }
