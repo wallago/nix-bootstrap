@@ -31,7 +31,7 @@ fn main() -> Result<()> {
         if disk_device {
             local.update_disk_config(&remote.config.get_disk_device()?.name)?;
         }
-        local.deploy_nix_stater_config(&remote)?;
+        local.deploy(&remote)?;
         remote.reconnect(&local)?;
     }
 
@@ -48,7 +48,7 @@ fn main() -> Result<()> {
         local.update_encrypt_file_keys(remote.config.get_age_key()?)?;
     }
     local.config_changes()?;
-    local.deploy_nix_config(&remote)?;
+    local.deploy(&remote)?;
 
     // if hardware_config {
     //     info!(

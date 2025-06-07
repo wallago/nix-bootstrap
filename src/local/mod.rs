@@ -27,7 +27,7 @@ pub struct Host {
     pub ssh_sk_path: PathBuf,
     pub ssh_known_hosts: PathBuf,
     ssh_pk: String,
-    host: Option<String>,
+    host: String,
 }
 
 impl Host {
@@ -42,15 +42,8 @@ impl Host {
             ssh_sk_path: home_dir.join(".ssh/id_ed25519"),
             ssh_known_hosts: home_dir.join(".ssh/known_hosts"),
             ssh_pk,
-            host: None,
+            host: String::from("plankton"),
         })
-    }
-
-    fn get_host(&self) -> Result<&str> {
-        Ok(self
-            .host
-            .as_ref()
-            .ok_or_else(|| anyhow!("Host has not been set"))?)
     }
 
     pub fn update_ssh_knowing_hosts(
@@ -137,7 +130,7 @@ impl Host {
             .ok_or_else(|| anyhow!("Git repo not seems to be cloned"))?)
     }
 
-    pub fn deploy_nix_stater_config(&self, remote: &remote::Host) -> Result<bool> {
+    pub fn deploy(&self, remote: &remote::Host) -> Result<bool> {
         if !Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt("📣 Do you want to run nixos-anywhere?")
             .interact()?
@@ -146,12 +139,12 @@ impl Host {
             return Ok(false);
         }
 
-        info!("🚀 Deploying nix-stater-config via nixos-anywhere");
+        info!("🚀 Deploying via nixos-anywhere");
         helpers::command::run(&format!(
-            "nix run github:nix-community/nixos-anywhere -- --ssh-port {} --flake {}#{} {}@{}",
+            "nix run github:nix-community/nixos-anywhere -- --ssh-port {} --flake {}#{} --target-host {}@{}",
             remote.port,
             self.get_repo()?.path.display(),
-            "plankton",
+            self.host,
             remote.user,
             remote.destination,
         ))?;
@@ -159,29 +152,29 @@ impl Host {
         Ok(true)
     }
 
-    pub fn deploy_nix_config(&self, remote: &remote::Host) -> Result<bool> {
-        if !Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("📣 Do you want to run nixos-rebuild?")
-            .interact()?
-        {
-            warn!("❗ Skipping deployments via nixos-rebuild");
-            return Ok(false);
-        }
+    // pub fn deploy_nix_config(&self, remote: &remote::Host) -> Result<bool> {
+    //     if !Confirm::with_theme(&ColorfulTheme::default())
+    //         .with_prompt("📣 Do you want to run nixos-rebuild?")
+    //         .interact()?
+    //     {
+    //         warn!("❗ Skipping deployments via nixos-rebuild");
+    //         return Ok(false);
+    //     }
 
-        info!("🚀 Deploying nix-config via nixos-rebuild");
-        helpers::command::run(&format!(
-            "NIX_SSHOPTS=\"-p {}\" nixos-rebuild switch --flake {}#{} --build-host {}@{} --target-host {}@{} --use-remote-sudo",
-            remote.port,
-            self.get_repo()?.path.display(),
-            self.get_host()?,
-            remote.user,
-            remote.destination,
-            remote.user,
-            remote.destination,
-        ))?;
+    //     info!("🚀 Deploying nix-config via nixos-rebuild");
+    //     helpers::command::run(&format!(
+    //         "NIX_SSHOPTS=\"-p {}\" nixos-rebuild switch --flake {}#{} --build-host {}@{} --target-host {}@{} --use-remote-sudo",
+    //         remote.port,
+    //         self.get_repo()?.path.display(),
+    //         self.get_host()?,
+    //         remote.user,
+    //         remote.destination,
+    //         remote.user,
+    //         remote.destination,
+    //     ))?;
 
-        Ok(true)
-    }
+    //     Ok(true)
+    // }
 
     pub fn update_hardware_config(&self, contents: &Vec<u8>) -> Result<bool> {
         info!("📝 Update hardware config");
@@ -212,7 +205,7 @@ impl Host {
         info!("📝 Update SOPS");
         let repo = self.get_repo()?;
         let sops_path = repo.path.join(".sops.yaml");
-        let host = self.get_host()?;
+        let host: &str = self.host.as_ref();
         let key_line_prefix = format!("- &{host}",);
         let new_key_line = format!("    - &{host} {}", contents);
         let new_ref_line = format!("          - *{host}");
@@ -299,12 +292,10 @@ impl Host {
             .with_prompt("📣 Select a target block device?")
             .items(&hosts)
             .interact()?;
-        self.host = Some(
-            hosts
-                .get(selection)
-                .ok_or_else(|| anyhow!("Selected host doesn't be found"))?
-                .clone(),
-        );
+        self.host = hosts
+            .get(selection)
+            .ok_or_else(|| anyhow!("Selected host doesn't be found"))?
+            .clone();
         Ok(())
     }
 
