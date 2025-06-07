@@ -31,7 +31,7 @@ fn main() -> Result<()> {
         if disk_device {
             local.update_disk_config(&remote.config.get_disk_device()?.name)?;
         }
-        local.config_changes()?;
+        local.get_repo()?.config_changes()?;
         if !local.deploy(&remote)? {
             bail!("Couldn't continue if you don't deploy this from iso")
         }
@@ -48,7 +48,7 @@ fn main() -> Result<()> {
         local.update_sops(remote.config.get_age_key()?)?;
         local.update_encrypt_file_keys(remote.config.get_age_key()?)?;
     }
-    local.config_changes()?;
+    local.get_repo()?.config_changes()?;
     // local.deploy(&remote)?;
     local.deploy_bis(&remote)?;
 

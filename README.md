@@ -101,3 +101,26 @@ cargo run -- \
 # DEBUG
 
 `cargo run -- -n octopus -d localhost -u nixos -p me --port 10022 --config  /home/wallago/nix-config/`
+
+---
+
+## Steps
+
+### From nix ISO
+
+- connect to remote in ssh
+- clone locally nix starter config
+- generate hardware configuration
+- select a disk device
+- replace value of the nix starter config with those infos
+- deploy with nixos-anywhere the config
+
+### From nix whatever config
+
+- connect to remote in ssh
+- clone locally nix config
+- generate an age key from the remote ssh key
+- add it to .sops.yaml
+- update secrets file to add the new age key to decrypt it
+- replace value of the nix config with those infos
+- deploy FAILING ...
