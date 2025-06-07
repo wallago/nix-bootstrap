@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -18,32 +18,42 @@ use crate::{
 struct Repo {
     git: Repository,
     path: PathBuf,
-    tmp_dir: TempDir,
+    #[allow(dead_code)]
+    tmp_dir: TempDir, // Keep tempdir alive
+    host: String,
+}
+
+struct Ssh {
+    pk_path: PathBuf,
+    pk: String,
+    sk_path: PathBuf,
+    known_hosts: PathBuf,
 }
 
 pub struct Host {
     repo: Option<Repo>,
-    pub ssh_pk_path: PathBuf,
-    pub ssh_sk_path: PathBuf,
-    pub ssh_known_hosts: PathBuf,
-    ssh_pk: String,
-    host: String,
+    ssh: Ssh,
 }
 
 impl Host {
     pub fn new() -> Result<Self> {
         let home_dir =
             dirs2::home_dir().ok_or_else(|| anyhow!("Could not find local home directory"))?;
-        let ssh_pk = fs::read_to_string(home_dir.join(".ssh/id_ed25519.pub"))?;
+        let pk = fs::read_to_string(home_dir.join(".ssh/id_ed25519.pub"))?;
 
         Ok(Self {
             repo: None,
-            ssh_pk_path: home_dir.join(".ssh/id_ed25519.pub"),
-            ssh_sk_path: home_dir.join(".ssh/id_ed25519"),
-            ssh_known_hosts: home_dir.join(".ssh/known_hosts"),
-            ssh_pk,
-            host: String::from("plankton"),
+            ssh: Ssh {
+                pk_path: home_dir.join(".ssh/id_ed25519.pub"),
+                sk_path: home_dir.join(".ssh/id_ed25519"),
+                known_hosts: home_dir.join(".ssh/known_hosts"),
+                pk,
+            },
         })
+    }
+
+    pub fn get_ssh_path(&self) -> (&PathBuf, &PathBuf) {
+        (&self.ssh.pk_path, &self.ssh.sk_path)
     }
 
     pub fn update_ssh_knowing_hosts(
@@ -52,8 +62,8 @@ impl Host {
         port: &str,
         pk: &str,
     ) -> Result<bool> {
-        info!("📝 Update ssh knowing host");
-        let known_lines: Vec<String> = BufReader::new(File::open(&self.ssh_known_hosts)?)
+        info!("🔁 Update ssh knowing host");
+        let known_lines: Vec<String> = BufReader::new(File::open(&self.ssh.known_hosts)?)
             .lines()
             .collect::<Result<_, _>>()?;
         let full_entry = format!("[{}]:{} {}", destination, port, pk);
@@ -65,7 +75,7 @@ impl Host {
         }
 
         if known_lines.iter().any(|line| line.contains(&host_prefix)) {
-            info!("Remote host key updated");
+            info!("🔸 Remote host key has been updated in knowing hosts");
             let updated_lines: Vec<String> = known_lines
                 .into_iter()
                 .map(|line| {
@@ -77,14 +87,14 @@ impl Host {
                 })
                 .collect();
 
-            fs::write(&self.ssh_known_hosts, updated_lines.join("\n") + "\n")?;
+            fs::write(&self.ssh.known_hosts, updated_lines.join("\n") + "\n")?;
         } else {
-            info!("Remote host has been add");
+            info!("🔸 Remote host key has been add in knowing hosts");
 
             let mut file = OpenOptions::new()
                 .append(true)
-                .open(&self.ssh_known_hosts)
-                .with_context(|| format!("Failed to open {}", self.ssh_known_hosts.display()))?;
+                .open(&self.ssh.known_hosts)
+                .with_context(|| format!("Failed to open {}", self.ssh.known_hosts.display()))?;
             writeln!(file, "{}", full_entry)?;
         }
 
@@ -102,8 +112,8 @@ impl Host {
             git: repo,
             path: repo_path.to_path_buf(),
             tmp_dir,
+            host: String::from("plankton"),
         });
-        info!("📂 Git repository is available at {}", repo_path.display());
         Ok(())
     }
 
@@ -118,8 +128,8 @@ impl Host {
             git: repo,
             path: repo_path.to_path_buf(),
             tmp_dir,
+            host: Self::get_config_host(repo_path)?,
         });
-        info!("📂 Git repository is available at {}", repo_path.display());
         Ok(())
     }
 
@@ -132,7 +142,7 @@ impl Host {
 
     pub fn deploy(&self, remote: &remote::Host) -> Result<bool> {
         if !Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("📣 Do you want to run nixos-anywhere?")
+            .with_prompt("Do you want to run nixos-anywhere?")
             .interact()?
         {
             warn!("❗ Skipping deployments via nixos-anywhere");
@@ -140,11 +150,12 @@ impl Host {
         }
 
         info!("🚀 Deploying via nixos-anywhere");
+        let repo = self.get_repo()?;
         helpers::command::run(&format!(
             "nix run github:nix-community/nixos-anywhere -- --ssh-port {} --flake {}#{} --target-host {}@{}",
             remote.port,
-            self.get_repo()?.path.display(),
-            self.host,
+            repo.path.display(),
+            repo.host,
             remote.user,
             remote.destination,
         ))?;
@@ -152,60 +163,69 @@ impl Host {
         Ok(true)
     }
 
-    // pub fn deploy_nix_config(&self, remote: &remote::Host) -> Result<bool> {
-    //     if !Confirm::with_theme(&ColorfulTheme::default())
-    //         .with_prompt("📣 Do you want to run nixos-rebuild?")
-    //         .interact()?
-    //     {
-    //         warn!("❗ Skipping deployments via nixos-rebuild");
-    //         return Ok(false);
-    //     }
+    pub fn deploy_bis(&self, remote: &remote::Host) -> Result<bool> {
+        if !Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt("Do you want to run nixos-rebuild?")
+            .interact()?
+        {
+            warn!("❗ Skipping deployments via nixos-rebuild");
+            return Ok(false);
+        }
 
-    //     info!("🚀 Deploying nix-config via nixos-rebuild");
-    //     helpers::command::run(&format!(
-    //         "NIX_SSHOPTS=\"-p {}\" nixos-rebuild switch --flake {}#{} --build-host {}@{} --target-host {}@{} --use-remote-sudo",
-    //         remote.port,
-    //         self.get_repo()?.path.display(),
-    //         self.get_host()?,
-    //         remote.user,
-    //         remote.destination,
-    //         remote.user,
-    //         remote.destination,
-    //     ))?;
+        info!("🚀 Deploying nix-config via nixos-rebuild");
+        let repo = self.get_repo()?;
+        // helpers::command::run(&format!(
+        //     "NIX_SSHOPTS=\"-p {}\" nixos-rebuild switch --flake {}#{} --build-host {}@{} --target-host {}@{} --use-remote-sudo",
+        //     remote.port,
+        //     repo.path.display(),
+        //     repo.host,
+        //     remote.user,
+        //     remote.destination,
+        //     remote.user,
+        //     remote.destination,
+        // ))?;
+        helpers::command::run(&format!(
+            "NIX_SSHOPTS=\"-p {}\" nixos-rebuild switch --flake {}#{} --target-host {}@{}",
+            remote.port,
+            repo.path.display(),
+            repo.host,
+            remote.user,
+            remote.destination,
+        ))?;
 
-    //     Ok(true)
-    // }
+        Ok(true)
+    }
 
-    pub fn update_hardware_config(&self, contents: &Vec<u8>) -> Result<bool> {
-        info!("📝 Update hardware config");
+    pub fn update_hardware_config(&self, contents: &Vec<u8>) -> Result<()> {
+        info!("🔁 Update hardware config");
         let repo = self.get_repo()?;
         let hardware_config_path =
             format!("{}/nixos/hardware-configuration.nix", repo.path.display());
         fs::write(hardware_config_path, contents)?;
-        Ok(true)
+        Ok(())
     }
 
-    pub fn update_disk_config(&self, contents: &str) -> Result<bool> {
-        info!("📝 Update disk config");
+    pub fn update_disk_config(&self, contents: &str) -> Result<()> {
+        info!("🔁 Update disk config");
         let repo = self.get_repo()?;
         let disk_config_path = format!("{}/nixos/disk-device.txt", repo.path.display());
         fs::write(disk_config_path, format!("/dev/{}", contents))?;
-        Ok(true)
+        Ok(())
     }
 
-    pub fn update_ssh_public_key(&self) -> Result<bool> {
-        info!("📝 Update ssh public key");
+    pub fn update_ssh_authorized_key(&self) -> Result<()> {
+        info!("🔁 Update ssh authorized key");
         let repo = self.get_repo()?;
-        let ssh_public_key_path = format!("{}/nixos/ssh_authorized_key.pub", repo.path.display());
-        fs::write(ssh_public_key_path, &self.ssh_pk)?;
-        Ok(true)
+        let path = format!("{}/nixos/ssh_authorized_key.pub", repo.path.display());
+        fs::write(path, &self.ssh.pk)?;
+        Ok(())
     }
 
     pub fn update_sops(&self, contents: &str) -> Result<bool> {
-        info!("📝 Update SOPS");
+        info!("🔁 Update SOPS");
         let repo = self.get_repo()?;
         let sops_path = repo.path.join(".sops.yaml");
-        let host: &str = self.host.as_ref();
+        let host: &str = repo.host.as_ref();
         let key_line_prefix = format!("- &{host}",);
         let new_key_line = format!("    - &{host} {}", contents);
         let new_ref_line = format!("          - *{host}");
@@ -228,7 +248,7 @@ impl Host {
                     warn!("❗ Key was already into SOPS for {host}");
                     return Ok(false);
                 } else {
-                    info!("📝 Update key into SOPS for {host}");
+                    info!("🔸 Update key into SOPS for {host}");
                     lines[index] = new_key_line.clone();
                     fs::write(sops_path, lines.join("\n"))?;
                     return Ok(true);
@@ -273,7 +293,7 @@ impl Host {
         }
 
         if new_key_added && new_ref_added {
-            info!("📝 New key added into SOPS for {host}");
+            info!("🔁 New key added into SOPS for {host}");
             fs::write(sops_path, lines.join("\n"))?;
             Ok(true)
         } else {
@@ -281,26 +301,24 @@ impl Host {
         }
     }
 
-    pub fn get_config_host(&mut self) -> Result<()> {
-        let repo = self.get_repo()?;
+    pub fn get_config_host(repo_path: &Path) -> Result<String> {
         let hosts =
             serde_json::from_str::<Vec<String>>(&helpers::command::run_with_stdout(&format!(
                 " nix eval --json {}#nixosConfigurations --apply builtins.attrNames",
-                repo.path.display()
+                repo_path.display()
             ))?)?;
         let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("📣 Select a target block device?")
+            .with_prompt("Select a target block device?")
             .items(&hosts)
             .interact()?;
-        self.host = hosts
+        let host = hosts
             .get(selection)
-            .ok_or_else(|| anyhow!("Selected host doesn't be found"))?
-            .clone();
-        Ok(())
+            .ok_or_else(|| anyhow!("Selected host doesn't be found"))?;
+        Ok(host.to_string())
     }
 
     pub fn update_encrypt_file_keys(&self, age_pk: &str) -> Result<()> {
-        info!("📝 Update encryt file with remote age key");
+        info!("🔁 Update encryt file with remote age key");
         let repo = self.get_repo()?;
         let encryt_file_path = format!("{}/nixos/common/secrets.yaml", repo.path.display());
         let contents = helpers::command::run_with_stdout(&format!(
@@ -311,14 +329,21 @@ impl Host {
     }
 
     pub fn config_changes(&self) -> Result<()> {
-        info!("🔁 Untrack config changes");
+        info!("📝 Untrack config changes");
         let repo = self.get_repo()?;
-        for file in helpers::git::untrack_changes(&repo.git)? {
-            info!(
-                "{}:\n{}",
-                file,
-                fs::read_to_string(format!("{}/{}", repo.path.display(), file))?
-            );
+        let files = helpers::git::untrack_changes(&repo.git)?;
+        files.iter().for_each(|file| println!("🔸 {file}"));
+        if Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt("Do you want to see the detail of those changes?")
+            .interact()?
+        {
+            for file in files {
+                info!(
+                    "🔸 {}:\n{}",
+                    file,
+                    fs::read_to_string(format!("{}/{}", repo.path.display(), file))?
+                );
+            }
         }
         Ok(())
     }

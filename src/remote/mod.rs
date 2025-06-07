@@ -136,7 +136,7 @@ impl Host {
         local.update_ssh_knowing_hosts(&destination, &port, &pk)?;
 
         let user = Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("📣 Enter ssh user:")
+            .with_prompt("Enter ssh user:")
             .default("nixos".to_string())
             .allow_empty(false)
             .show_default(true)
@@ -148,7 +148,7 @@ impl Host {
             .map(|ssh_auth| ssh_auth.to_string())
             .collect();
         let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("📣 Select an authentication method (ssh)?")
+            .with_prompt("Select an authentication method (ssh)?")
             .items(&labels)
             .interact()?;
         match ssh_auth_opts
@@ -156,28 +156,24 @@ impl Host {
             .ok_or_else(|| anyhow!("Authentication method (ssh) not found"))?
         {
             AuthMethod::Agent => {
-                info!("Authentication (ssh) by agent");
+                info!("🔸 Authentication (ssh) by agent");
                 sess.userauth_agent(&user)
                     .context("Authentication (ssh) failed by agent")?
             }
             AuthMethod::Passwd => {
-                info!("Authenticating (ssh) by password");
+                info!("🔸 Authenticating (ssh) by password");
                 let password = Password::with_theme(&ColorfulTheme::default())
-                    .with_prompt("📣 Enter password (ssh):")
+                    .with_prompt("Enter password (ssh):")
                     .allow_empty_password(false)
                     .interact()?;
                 sess.userauth_password(&user, &password)
                     .context("Authentication (ssh) failed by password")?;
             }
             AuthMethod::PublicKey => {
-                info!("Authenticating (ssh) by public key");
-                sess.userauth_pubkey_file(
-                    &user,
-                    Some(&local.ssh_pk_path),
-                    &local.ssh_sk_path,
-                    None,
-                )
-                .context("Authentication (ssh) failed by public key")?;
+                info!("🔸 Authenticating (ssh) by public key");
+                let (pk_path, sk_path) = local.get_ssh_path();
+                sess.userauth_pubkey_file(&user, Some(pk_path), &sk_path, None)
+                    .context("Authentication (ssh) failed by public key")?;
             }
         }
 
@@ -185,7 +181,7 @@ impl Host {
             return Err(anyhow!("Authentication (ssh) failed"));
         }
 
-        info!("🔑 Remote host connected (via ssh) to {addr}");
+        info!("🔸 Remote host connected (via ssh) to {addr}");
         Ok((sess, pk, user.to_string()))
     }
 
@@ -224,7 +220,7 @@ impl Host {
 
     pub fn get_hardware_config(&mut self) -> Result<bool> {
         if !Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!("📣 Do you want to get hardware configuration?",))
+            .with_prompt(format!("Do you want to get hardware configuration?",))
             .interact()?
         {
             warn!("❗ Skipping hardware-configuration part");
@@ -240,7 +236,7 @@ impl Host {
 
     pub fn get_disk_device(&mut self) -> Result<bool> {
         if !Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("📣 Do you want to select a disk device?")
+            .with_prompt("Do you want to select a disk device?")
             .interact()?
         {
             warn!("❗ Skipping disk device selection");
@@ -251,7 +247,7 @@ impl Host {
             &self.run_command("lsblk -d -J -o NAME,SIZE,MODEL,MOUNTPOINT")?,
         )?;
         let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("📣 Select a target block device?")
+            .with_prompt("Select a target block device?")
             .items(
                 &disk_devices
                     .blockdevices
@@ -270,7 +266,7 @@ impl Host {
 
     pub fn get_age_key(&mut self) -> Result<bool> {
         if !Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("📣 Do you want to get age key?")
+            .with_prompt("Do you want to get age key?")
             .interact()?
         {
             warn!("❗ Skipping age key part");

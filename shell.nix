@@ -17,6 +17,7 @@ in pkgs.mkShell {
       local with_iso="$1"
       local boot_flag="-boot c"
       local iso_flag=""
+      local network="-net nic -net user,hostfwd=tcp::10022-:2222"
 
       if [ ! -f ${diskImage} ]; then
         echo "Disk image '${diskImage}' not found. Run create-qemu-disk first."
@@ -26,6 +27,7 @@ in pkgs.mkShell {
       if [ "$with_iso" = "--iso" ]; then
         boot_flag="-boot once=d"
         iso_flag="-cdrom ${nixosIso}"
+        network="-net nic -net user,hostfwd=tcp::10022-:22"
       fi
 
       qemu-system-x86_64 \
@@ -34,8 +36,8 @@ in pkgs.mkShell {
         -cpu host \
         $boot_flag \
         $iso_flag \
+        $network \
         -drive file=vm-disk.qcow2,format=qcow2 \
-        -net nic -net user,hostfwd=tcp::10022-:22 \
         -vga virtio \
         -usb -device usb-tablet
     }

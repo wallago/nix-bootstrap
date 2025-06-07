@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::Parser;
 use tracing::info;
 
@@ -10,7 +10,7 @@ mod remote;
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     info!("🚀 Welcome to nix-bootstrap !");
-    info!("A tool to install my nix-config with sops keys update");
+    info!("🔸 A tool to install my nix-config with sops keys update");
 
     let params = params::Args::parse();
 
@@ -23,7 +23,7 @@ fn main() -> Result<()> {
         info!("🆕 Process from nix iso");
         info!("🔸 Password has been set");
         local.git_clone_nix_stater_config()?;
-        local.update_ssh_public_key()?;
+        local.update_ssh_authorized_key()?;
 
         if hardware_config {
             local.update_hardware_config(remote.config.get_hardware_file()?)?;
@@ -31,7 +31,10 @@ fn main() -> Result<()> {
         if disk_device {
             local.update_disk_config(&remote.config.get_disk_device()?.name)?;
         }
-        local.deploy(&remote)?;
+        local.config_changes()?;
+        if !local.deploy(&remote)? {
+            bail!("Couldn't continue if you don't deploy this from iso")
+        }
         remote.reconnect(&local)?;
     }
 
@@ -39,16 +42,15 @@ fn main() -> Result<()> {
     info!("🔸 Root privileges are available");
     // check hardware_config
     // make parser for host to see disko disk
-    // sops update secrets to accecpt it
     local.git_clone_nix_config()?;
-    local.get_config_host()?;
     let age_key = remote.get_age_key()?;
     if age_key {
         local.update_sops(remote.config.get_age_key()?)?;
         local.update_encrypt_file_keys(remote.config.get_age_key()?)?;
     }
     local.config_changes()?;
-    local.deploy(&remote)?;
+    // local.deploy(&remote)?;
+    local.deploy_bis(&remote)?;
 
     // if hardware_config {
     //     info!(
