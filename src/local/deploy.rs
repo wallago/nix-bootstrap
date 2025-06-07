@@ -5,7 +5,7 @@ use tracing::{info, warn};
 use crate::{helpers, remote};
 
 impl super::Host {
-    pub fn deploy(&self, remote: &remote::Host) -> Result<bool> {
+    pub fn deploy_nixos_anywhere(&self, remote: &remote::Host) -> Result<bool> {
         if !Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt("Do you want to run nixos-anywhere?")
             .interact()?
@@ -28,7 +28,7 @@ impl super::Host {
         Ok(true)
     }
 
-    pub fn deploy_bis(&self, remote: &remote::Host) -> Result<bool> {
+    pub fn deploy_nixos_rebuild(&self, remote: &remote::Host) -> Result<bool> {
         if !Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt("Do you want to run nixos-rebuild?")
             .interact()?
@@ -39,18 +39,8 @@ impl super::Host {
 
         info!("🚀 Deploying nix-config via nixos-rebuild");
         let repo = self.get_repo()?;
-        // helpers::command::run(&format!(
-        //     "NIX_SSHOPTS=\"-p {}\" nixos-rebuild switch --flake {}#{} --build-host {}@{} --target-host {}@{} --use-remote-sudo",
-        //     remote.port,
-        //     repo.path.display(),
-        //     repo.host,
-        //     remote.user,
-        //     remote.destination,
-        //     remote.user,
-        //     remote.destination,
-        // ))?;
         helpers::command::run(&format!(
-            "NIX_SSHOPTS=\"-p {}\" nixos-rebuild switch --flake {}#{} --target-host {}@{}",
+            "NIX_SSHOPTS=\"-p {}\" nixos-rebuild switch --flake {}#{} --target-host {}@{} --use-remote-sudo",
             remote.port,
             repo.path.display(),
             repo.host,

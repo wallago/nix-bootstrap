@@ -20,33 +20,22 @@ pub struct Repo {
 }
 
 impl Repo {
-    pub fn clone_nix_stater_config() -> Result<Self> {
-        info!("📂 Clone nix-stater-config git repository");
-        let (repo, tmp_dir) = helpers::git::clone_repository("nix-starter-config")?;
-        let repo_dir = repo.path().to_path_buf();
-        let repo_path = repo_dir
-            .parent()
-            .context("Could not get parent path of cloned git repository")?;
-        Ok(Self {
-            git: repo,
-            path: repo_path.to_path_buf(),
-            tmp_dir,
-            host: String::from("plankton"),
-        })
-    }
-
-    pub fn clone_nix_config() -> Result<Self> {
+    pub fn clone_nix_config(use_iso: bool) -> Result<Self> {
         info!("📂 Clone nix-config git repository ");
         let (repo, tmp_dir) = helpers::git::clone_repository("nix-config")?;
         let repo_dir = repo.path().to_path_buf();
         let repo_path = repo_dir
             .parent()
             .context("Could not get parent path of cloned git repository")?;
+        let host = match use_iso {
+            true => "plankton".to_string(),
+            false => Self::get_config_host(repo_path)?,
+        };
         Ok(Self {
             git: repo,
             path: repo_path.to_path_buf(),
             tmp_dir,
-            host: Self::get_config_host(repo_path)?,
+            host,
         })
     }
 

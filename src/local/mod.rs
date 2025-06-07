@@ -1,5 +1,3 @@
-use std::fs::{self};
-
 use anyhow::{Result, anyhow};
 
 use crate::local::{git::Repo, ssh::Info};
@@ -18,24 +16,12 @@ impl Host {
     pub fn new() -> Result<Self> {
         let home_dir =
             dirs2::home_dir().ok_or_else(|| anyhow!("Could not find local home directory"))?;
-        let pk = fs::read_to_string(home_dir.join(".ssh/id_ed25519.pub"))?;
-
-        let ssh = ssh::Info::new(
-            home_dir.join(".ssh/id_ed25519.pub"),
-            home_dir.join(".ssh/id_ed25519"),
-            home_dir.join(".ssh/known_hosts"),
-            pk,
-        );
+        let ssh = ssh::Info::new(home_dir.join(".ssh/known_hosts"));
         Ok(Self { repo: None, ssh })
     }
 
-    pub fn git_clone_nix_stater_config(&mut self) -> Result<()> {
-        self.repo = Some(Repo::clone_nix_stater_config()?);
-        Ok(())
-    }
-
-    pub fn git_clone_nix_config(&mut self) -> Result<()> {
-        self.repo = Some(Repo::clone_nix_config()?);
+    pub fn git_clone_nix_config(&mut self, use_iso: bool) -> Result<()> {
+        self.repo = Some(Repo::clone_nix_config(use_iso)?);
         Ok(())
     }
 

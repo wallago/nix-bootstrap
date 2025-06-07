@@ -12,26 +12,44 @@ impl super::Host {
     pub fn update_hardware_config(&self, contents: &Vec<u8>) -> Result<()> {
         info!("🔁 Update hardware config");
         let repo = self.get_repo()?;
-        let hardware_config_path =
-            format!("{}/nixos/hardware-configuration.nix", repo.path.display());
+        let hardware_config_path = format!(
+            "{}/hosts/{}/hardware-configuration.nix",
+            repo.path.display(),
+            repo.host
+        );
+
         fs::write(hardware_config_path, contents)?;
         Ok(())
     }
 
-    pub fn update_disk_config(&self, contents: &str) -> Result<()> {
+    pub fn update_disk_config(&self, contents: &str) -> Result<bool> {
         info!("🔁 Update disk config");
         let repo = self.get_repo()?;
-        let disk_config_path = format!("{}/nixos/disk-device.txt", repo.path.display());
-        fs::write(disk_config_path, format!("/dev/{}", contents))?;
-        Ok(())
-    }
+        let host = repo.host.clone();
+        let host_path = repo.path.join(format!("hosts/{host}/default.nix"));
+        let line_prefix = "disk.path = \"";
+        let new_line = format!("  disk.path = \"/dev/{}\";", contents);
+        let file =
+            File::open(&host_path).context(format!("Opening {} failed", host_path.display()))?;
+        let mut lines: Vec<String> = BufReader::new(file)
+            .lines()
+            .collect::<Result<_, _>>()
+            .context("Reading lines failed")?;
 
-    pub fn update_ssh_authorized_key(&self) -> Result<()> {
-        info!("🔁 Update ssh authorized key");
-        let repo = self.get_repo()?;
-        let path = format!("{}/nixos/ssh_authorized_key.pub", repo.path.display());
-        fs::write(path, &self.ssh.pk)?;
-        Ok(())
+        for (index, line) in lines.iter().enumerate() {
+            if line.trim_start().starts_with(&line_prefix) {
+                if line.trim() == new_line.trim() {
+                    warn!("❗ Disk device was already set for {host}");
+                    return Ok(false);
+                } else {
+                    info!("🔸 Update disk device for {host}");
+                    lines[index] = new_line.clone();
+                    fs::write(host_path, lines.join("\n"))?;
+                    return Ok(true);
+                }
+            }
+        }
+        Err(anyhow!("Disk device has not been find"))
     }
 
     pub fn update_sops(&self, contents: &str) -> Result<bool> {

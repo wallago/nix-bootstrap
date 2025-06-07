@@ -8,20 +8,12 @@ use anyhow::{Context, Result};
 use tracing::{info, warn};
 
 pub struct Info {
-    pk_path: PathBuf,
-    pub pk: String,
-    sk_path: PathBuf,
     known_hosts_path: PathBuf,
 }
 
 impl Info {
-    pub fn new(pk_path: PathBuf, sk_path: PathBuf, known_hosts_path: PathBuf, pk: String) -> Self {
-        Self {
-            pk_path,
-            pk,
-            sk_path,
-            known_hosts_path,
-        }
+    pub fn new(known_hosts_path: PathBuf) -> Self {
+        Self { known_hosts_path }
     }
 
     pub fn update_knowing_hosts(&self, destination: &str, port: &str, pk: &str) -> Result<bool> {
@@ -62,9 +54,5 @@ impl Info {
         }
 
         Ok(true)
-    }
-
-    pub fn get_keys_path(&self) -> (&PathBuf, &PathBuf) {
-        (&self.pk_path, &self.sk_path)
     }
 }

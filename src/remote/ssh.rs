@@ -18,7 +18,6 @@ use crate::local;
 enum AuthMethod {
     Agent,
     Passwd,
-    PublicKey,
 }
 
 impl fmt::Display for AuthMethod {
@@ -26,7 +25,6 @@ impl fmt::Display for AuthMethod {
         let s = match self {
             AuthMethod::Agent => "agent",
             AuthMethod::Passwd => "password",
-            AuthMethod::PublicKey => "public key",
         };
         write!(f, "{}", s)
     }
@@ -39,7 +37,6 @@ impl FromStr for AuthMethod {
         match s.to_lowercase().as_str() {
             "agent" => Ok(AuthMethod::Agent),
             "password" => Ok(AuthMethod::Passwd),
-            "public key" => Ok(AuthMethod::PublicKey),
             _ => Err(format!("Invalid authentication method: {}", s)),
         }
     }
@@ -87,7 +84,7 @@ impl super::Host {
             .show_default(true)
             .interact_text()?;
 
-        let ssh_auth_opts = vec![AuthMethod::Agent, AuthMethod::Passwd, AuthMethod::PublicKey];
+        let ssh_auth_opts = vec![AuthMethod::Agent, AuthMethod::Passwd];
         let labels: Vec<String> = ssh_auth_opts
             .iter()
             .map(|ssh_auth| ssh_auth.to_string())
@@ -113,12 +110,6 @@ impl super::Host {
                     .interact()?;
                 sess.userauth_password(&user, &password)
                     .context("Authentication (ssh) failed by password")?;
-            }
-            AuthMethod::PublicKey => {
-                info!("🔸 Authenticating (ssh) by public key");
-                let (pk_path, sk_path) = local.ssh.get_keys_path();
-                sess.userauth_pubkey_file(&user, Some(pk_path), &sk_path, None)
-                    .context("Authentication (ssh) failed by public key")?;
             }
         }
 
