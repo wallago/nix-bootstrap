@@ -44,8 +44,9 @@ impl FromStr for AuthMethod {
 
 impl super::Host {
     pub fn reconnect(&mut self, local: &local::Host) -> Result<()> {
-        let (ssh, ssh_pk, user) = Self::connect(&self.destination, &self.port, local)?;
+        let (ssh, ssh_pk, user, port) = Self::connect(&self.destination, local)?;
         self.ssh = ssh;
+        self.port = port;
         self.ssh_pk = ssh_pk;
         self.user = user;
         Ok(())
@@ -53,11 +54,28 @@ impl super::Host {
 
     pub fn connect(
         destination: &str,
-        port: &str,
         local: &local::Host,
-    ) -> Result<(Session, String, String)> {
+    ) -> Result<(Session, String, String, String)> {
+        info!("🔑 Try to connect (via ssh) to remote host");
+        let port = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Enter ssh port (1-65535):")
+            .default("22".to_string())
+            .allow_empty(false)
+            .show_default(true)
+            .validate_with(|input: &String| -> Result<(), &str> {
+                input
+                    .parse::<u16>()
+                    .map_err(|_| "Please enter a valid number between 1 and 65535")
+                    .and_then(|n| {
+                        if (1..=65535).contains(&n) {
+                            Ok(())
+                        } else {
+                            Err("Port must be between 1 and 65535")
+                        }
+                    })
+            })
+            .interact_text()?;
         let addr = format!("{destination}:{port}");
-        info!("🔑 Try to connect (via ssh) to {addr}");
         let socket_addr = addr
             .to_socket_addrs()?
             .next()
@@ -118,7 +136,7 @@ impl super::Host {
         }
 
         info!("🔸 Remote host connected (via ssh) to {addr}");
-        Ok((sess, pk, user.to_string()))
+        Ok((sess, pk, user.to_string(), port))
     }
 
     pub fn run_command(&self, cmd: &str) -> Result<String> {
