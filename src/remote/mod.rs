@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use dialoguer::{Confirm, Select, theme::ColorfulTheme};
+use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
 use ssh2::Session;
 use tracing::{info, warn};
 
@@ -18,12 +18,17 @@ pub struct Host {
 }
 
 impl Host {
-    pub fn new(destination: &str, port: &u32, local: &local::Host) -> Result<Self> {
-        let port = port.to_string();
-        let (ssh, ssh_pk, user) = Self::connect(&destination, &port, local)?;
+    pub fn new(local: &local::Host) -> Result<Self> {
+        let destination = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Enter ssh destination:")
+            .default("localhost".to_string())
+            .allow_empty(false)
+            .show_default(true)
+            .interact_text()?;
+        let (ssh, ssh_pk, user, port) = Self::connect(&destination, local)?;
         Ok(Self {
             user,
-            destination: destination.to_owned(),
+            destination,
             port,
             ssh,
             ssh_pk,
