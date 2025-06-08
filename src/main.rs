@@ -1,26 +1,24 @@
 use anyhow::{Result, bail};
-use clap::Parser;
 use tracing::{info, warn};
 
 mod helpers;
 mod local;
-mod params;
 mod remote;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     info!("🚀 Welcome to nix-bootstrap !");
-    info!("🔸 A tool to install my nix-config with sops keys update");
-
-    let params = params::Args::parse();
+    info!("🔸 A tool to install nixos configuration with sops keys update");
+    let is_remote_system_running_on_image =
+        helpers::ask_confirmation("Does remote host system is running on an installer image?")?;
 
     let mut local = local::Host::new()?;
-    let mut remote = remote::Host::new(&params.ssh_dest, &params.ssh_port, &local)?;
+    let mut remote = remote::Host::new(&local)?;
     let hardware_config = remote.get_hardware_config()?;
     let disk_device = remote.get_disk_device()?;
 
-    if params.use_iso {
-        info!("🆕 Process from nix iso");
+    if is_remote_system_running_on_image {
+        info!("🆕 Remote host system is running on an image");
         warn!("🔸 SSH access must be available");
         warn!("🔸 Password must be set");
         local.git_clone_nix_config(true)?;
@@ -34,10 +32,11 @@ fn main() -> Result<()> {
         if !local.deploy_nixos_anywhere(&remote)? {
             bail!("Couldn't continue if you don't deploy this from iso")
         }
+        helpers::ask_confirmation("Does remote host has reboot?")?;
         remote.reconnect(&local)?;
     }
 
-    info!("🔄 Process from configured nixos");
+    info!("🔄 Remote host system is running on an config");
     warn!("🔸 SSH access must be available");
     warn!("🔸 Root privileges must be available");
     local.git_clone_nix_config(false)?;
