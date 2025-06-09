@@ -27,10 +27,7 @@ impl Repo {
         let repo_path = repo_dir
             .parent()
             .context("Could not get parent path of cloned git repository")?;
-        let host = match use_iso {
-            true => "plankton".to_string(),
-            false => Self::get_config_host(repo_path)?,
-        };
+        let host = Self::get_config_host(repo_path, use_iso)?;
         Ok(Self {
             git: repo,
             path: repo_path.to_path_buf(),
@@ -39,12 +36,15 @@ impl Repo {
         })
     }
 
-    pub fn get_config_host(repo_path: &Path) -> Result<String> {
-        let hosts =
+    fn get_config_host(repo_path: &Path, use_iso: bool) -> Result<String> {
+        let mut hosts =
             serde_json::from_str::<Vec<String>>(&helpers::command::run_with_stdout(&format!(
                 " nix eval --json {}#nixosConfigurations --apply builtins.attrNames",
                 repo_path.display()
             ))?)?;
+        if use_iso {
+            hosts = hosts.into_iter().filter(|host| host.starts_with("plankton")).collect::<Vec<String>>();
+        }
         let selection = Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Select a target block device?")
             .items(&hosts)
@@ -53,6 +53,14 @@ impl Repo {
             .get(selection)
             .ok_or_else(|| anyhow!("Selected host doesn't be found"))?;
         Ok(host.to_string())
+    }
+
+    pub fn get_host(&self) -> &str {
+        if self.host.starts_with("plankton") {
+            "plankton"
+        } else {
+            &self.host
+        }
     }
 
     pub fn config_changes(&self) -> Result<()> {

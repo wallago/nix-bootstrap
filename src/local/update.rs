@@ -12,10 +12,11 @@ impl super::Host {
     pub fn update_hardware_config(&self, contents: &Vec<u8>) -> Result<()> {
         info!("🔁 Update hardware config");
         let repo = self.get_repo()?;
+        let host = repo.get_host();
         let hardware_config_path = format!(
             "{}/hosts/{}/hardware-configuration.nix",
             repo.path.display(),
-            repo.host
+            host
         );
 
         fs::write(hardware_config_path, contents)?;
@@ -25,7 +26,7 @@ impl super::Host {
     pub fn update_disk_config(&self, contents: &str) -> Result<bool> {
         info!("🔁 Update disk config");
         let repo = self.get_repo()?;
-        let host = repo.host.clone();
+        let host = repo.get_host();
         let host_path = repo.path.join(format!("hosts/{host}/default.nix"));
         let line_prefix = "disk.path = \"";
         let new_line = format!("  disk.path = \"/dev/{}\";", contents);
