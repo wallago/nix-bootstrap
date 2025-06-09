@@ -47,7 +47,6 @@ impl super::Host {
             remote.user,
             remote.destination,
         ))?;
-
         Ok(true)
     }
 }
