@@ -53,5 +53,5 @@ fn main() -> Result<()> {
     }
     local.get_repo()?.config_changes()?;
     local.deploy_nixos_rebuild(&remote)?;
-    Ok(info!("🚀 Enjoy !"))
+    Ok(info!("🚀 Reboot your remote host and enjoy !"))
 }
