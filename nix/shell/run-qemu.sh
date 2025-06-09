@@ -22,5 +22,5 @@ qemu-system-x86_64 \
   $iso_flag \
   $network \
   -drive file=vm-disk.qcow2,format=qcow2 \
-  -vga virtio \
+  -vga std \
   -usb -device usb-tablet

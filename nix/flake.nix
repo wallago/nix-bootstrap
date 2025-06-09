@@ -17,8 +17,16 @@
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs;
             [ pkg-config openssl sops rust-analyzer qemu ] ++ [ rust ];
+          nixosIso = pkgs.fetchurl {
+            url =
+              "https://github.com/nix-community/nixos-images/releases/download/nixos-unstable/nixos-installer-x86_64-linux.iso";
+            sha256 = "05hla51wjf6ir37ccmz6qfi1xvz2vp0b57jifmyc7i1y7i36wkys";
+          };
+          diskImage = "vm-disk.qcow2";
           shellHook = ''
             export PATH=$PATH:${toString ./shell}
+            export nixosIso=$nixosIso
+            export diskImage=$diskImage
             echo "Welcome to your QEMU NixOS dev shell!"
             echo "Available commands:"
             echo "- create-qemu-disk.sh"
