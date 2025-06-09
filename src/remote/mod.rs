@@ -21,7 +21,7 @@ impl Host {
     pub fn new(local: &local::Host) -> Result<Self> {
         let destination = Input::with_theme(&ColorfulTheme::default())
             .with_prompt("Enter ssh destination:")
-            .default("localhost".to_string())
+            .default("127.0.0.1".to_string())
             .allow_empty(false)
             .show_default(true)
             .interact_text()?;
