@@ -1,3 +1,12 @@
+FILE="$HOME/Downloads/nixos-installer-x86_64-linux.iso"
+
+if [ ! -f "$FILE" ]; then
+  echo "Downloading NixOS ISO..."
+  curl -L "${url}" -o "$FILE"
+else
+  echo "ISO already downloaded: $FILE"
+fi
+
 if [ ! -f ${diskImage} ]; then
   echo "Disk image '${diskImage}' not found. Run create-qemu-disk first."
   return 1
