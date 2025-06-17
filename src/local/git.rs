@@ -46,7 +46,7 @@ impl Repo {
             hosts = hosts.into_iter().filter(|host| host.starts_with("plankton")).collect::<Vec<String>>();
         }
         let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Select a target block device?")
+            .with_prompt("Select a config host?")
             .items(&hosts)
             .interact()?;
         let host = hosts
