@@ -16,16 +16,29 @@ impl super::Host {
 
         info!("🚀 Deploying via nixos-anywhere");
         let repo = self.get_repo()?;
-        helpers::command::run(&format!(
+        let command = format!(
             "nix run github:nix-community/nixos-anywhere -- --ssh-port {} --flake {}#{} --target-host {}@{}",
             remote.port,
             repo.path.display(),
             repo.host,
             remote.user,
             remote.destination,
-        ))?;
+        );
+        tracing::info!("🔸 {command}");
 
-        Ok(true)
+        loop {
+            match helpers::command::run(&command) {
+                Ok(_) => return Ok(true),
+                Err(err) => {
+                    if !Confirm::with_theme(&ColorfulTheme::default())
+                        .with_prompt("Do you want to retry?")
+                        .interact()?
+                    {
+                        return Err(err);
+                    }
+                }
+            }
+        }
     }
 
     pub fn deploy_nixos_rebuild(&self, remote: &remote::Host) -> Result<bool> {
@@ -39,14 +52,29 @@ impl super::Host {
 
         info!("🚀 Deploying nix-config via nixos-rebuild");
         let repo = self.get_repo()?;
-        helpers::command::run(&format!(
-            "NIX_SSHOPTS=\"-p {}\" nixos-rebuild boot --flake {}#{} --target-host {}@{} --use-remote-sudo",
+        let command = format!(
+            "NIX_SSHOPTS=\"-p {}\" nixos-rebuild boot --flake {}#{} --build-host {}@{} --target-host {}@{} --sudo",
             remote.port,
             repo.path.display(),
             repo.host,
             remote.user,
             remote.destination,
-        ))?;
-        Ok(true)
+            remote.user,
+            remote.destination,
+        );
+        tracing::info!("🔸 {command}");
+        loop {
+            match helpers::command::run(&command) {
+                Ok(_) => return Ok(true),
+                Err(err) => {
+                    if !Confirm::with_theme(&ColorfulTheme::default())
+                        .with_prompt("Do you want to retry?")
+                        .interact()?
+                    {
+                        return Err(err);
+                    }
+                }
+            }
+        }
     }
 }

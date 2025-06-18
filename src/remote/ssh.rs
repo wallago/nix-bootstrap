@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
-use dialoguer::{Input, Password, Select, theme::ColorfulTheme};
+use dialoguer::{Confirm, Input, Password, Select, theme::ColorfulTheme};
 use ssh_key::PublicKey;
 use ssh2::Session;
 use tracing::info;
@@ -121,13 +121,32 @@ impl super::Host {
                     .context("Authentication (ssh) failed by agent")?
             }
             AuthMethod::Passwd => {
+                let mut i = 0;
+                loop {
+                    let password = Password::with_theme(&ColorfulTheme::default())
+                        .with_prompt("Enter password (ssh):")
+                        .allow_empty_password(false)
+                        .interact()?;
+                    match sess.userauth_password(&user, &password) {
+                        Ok(_) => break,
+
+                        Err(_) => {
+                            i += 1;
+                            if i >= 3 {
+                                bail!("Authentication (ssh) failed: too many attempts");
+                            }
+
+                            if !Confirm::with_theme(&ColorfulTheme::default())
+                                .with_prompt("Do you want to retry?")
+                                .interact()?
+                            {
+                                bail!("Authentication (ssh) failed by password")
+                            }
+                        }
+                    };
+                }
+
                 info!("🔸 Authenticating (ssh) by password");
-                let password = Password::with_theme(&ColorfulTheme::default())
-                    .with_prompt("Enter password (ssh):")
-                    .allow_empty_password(false)
-                    .interact()?;
-                sess.userauth_password(&user, &password)
-                    .context("Authentication (ssh) failed by password")?;
             }
         }
 
