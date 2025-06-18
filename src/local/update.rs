@@ -133,14 +133,16 @@ impl super::Host {
         }
     }
 
-    pub fn update_encrypt_file_keys(&self, age_pk: &str) -> Result<()> {
+    pub fn update_encrypt_file_keys(&self) -> Result<()> {
         info!("🔁 Update encryt file with remote age key");
         let repo = self.get_repo()?;
         let encryt_file_path = format!("{}/nixos/common/secrets.yaml", repo.path.display());
-        let contents = helpers::command::run_with_stdout(&format!(
-            "sops -r --add-age {} {}",
-            age_pk, encryt_file_path
-        ))?;
-        Ok(fs::write(encryt_file_path, contents)?)
+        let command = format!(
+            "SOPS_CONFIG={}/.sops.yaml sops updatekeys {}",
+            repo.path.display(),
+            encryt_file_path
+        );
+        tracing::info!("🔸 {command}");
+        helpers::command::run(&command)
     }
 }

@@ -43,7 +43,7 @@ fn main() -> Result<()> {
     let age_key = remote.get_age_key()?;
     if age_key {
         local.update_sops(remote.config.get_age_key()?)?;
-        local.update_encrypt_file_keys(remote.config.get_age_key()?)?;
+        local.update_encrypt_file_keys()?;
     }
     if hardware_config {
         local.update_hardware_config(remote.config.get_hardware_file()?)?;
@@ -53,5 +53,6 @@ fn main() -> Result<()> {
     }
     local.get_repo()?.config_changes()?;
     local.deploy_nixos_rebuild(&remote)?;
+
     Ok(info!("🚀 Reboot your remote host and enjoy !"))
 }
