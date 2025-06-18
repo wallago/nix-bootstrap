@@ -53,7 +53,7 @@ impl super::Host {
         info!("🚀 Deploying nix-config via nixos-rebuild");
         let repo = self.get_repo()?;
         let command = format!(
-            "NIX_SSHOPTS=\"-p {}\" nixos-rebuild boot --flake {}#{} --build-host {}@{} --target-host {}@{} --sudo",
+            "NIX_SSHOPTS=\"-p {}\" nixos-rebuild switch --flake {}#{} --build-host {}@{} --target-host {}@{} --use-substitutes --sudo --ask-sudo-password",
             remote.port,
             repo.path.display(),
             repo.host,
