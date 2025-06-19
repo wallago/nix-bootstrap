@@ -7,12 +7,12 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
-use dialoguer::{Confirm, Input, Password, Select, theme::ColorfulTheme};
+use dialoguer::{Input, Password, Select, theme::ColorfulTheme};
 use ssh_key::PublicKey;
 use ssh2::Session;
 use tracing::info;
 
-use crate::local;
+use crate::{helpers, local};
 
 #[derive(Debug)]
 enum AuthMethod {
@@ -136,10 +136,7 @@ impl super::Host {
                                 bail!("Authentication (ssh) failed: too many attempts");
                             }
 
-                            if !Confirm::with_theme(&ColorfulTheme::default())
-                                .with_prompt("Do you want to retry?")
-                                .interact()?
-                            {
+                            if !helpers::ask_confirmation("Do you want to retry?")? {
                                 bail!("Authentication (ssh) failed by password")
                             }
                         }

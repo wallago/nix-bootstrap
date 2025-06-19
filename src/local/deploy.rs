@@ -1,15 +1,11 @@
 use anyhow::Result;
-use dialoguer::{Confirm, theme::ColorfulTheme};
 use tracing::{info, warn};
 
 use crate::{helpers, remote};
 
 impl super::Host {
     pub fn deploy_nixos_anywhere(&self, remote: &remote::Host) -> Result<bool> {
-        if !Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("Do you want to run nixos-anywhere?")
-            .interact()?
-        {
+        if !helpers::ask_confirmation("Do you want to run nixos-anywhere?")? {
             warn!("❗ Skipping deployments via nixos-anywhere");
             return Ok(false);
         }
@@ -30,10 +26,7 @@ impl super::Host {
             match helpers::command::run(&command) {
                 Ok(_) => return Ok(true),
                 Err(err) => {
-                    if !Confirm::with_theme(&ColorfulTheme::default())
-                        .with_prompt("Do you want to retry?")
-                        .interact()?
-                    {
+                    if !helpers::ask_confirmation("Do you want to retry?")? {
                         return Err(err);
                     }
                 }
@@ -42,10 +35,7 @@ impl super::Host {
     }
 
     pub fn deploy_nixos_rebuild(&self, remote: &remote::Host) -> Result<bool> {
-        if !Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("Do you want to run nixos-rebuild?")
-            .interact()?
-        {
+        if !helpers::ask_confirmation("Do you want to run nixos-rebuild?")? {
             warn!("❗ Skipping deployments via nixos-rebuild");
             return Ok(false);
         }
@@ -67,10 +57,7 @@ impl super::Host {
             match helpers::command::run(&command) {
                 Ok(_) => return Ok(true),
                 Err(err) => {
-                    if !Confirm::with_theme(&ColorfulTheme::default())
-                        .with_prompt("Do you want to retry?")
-                        .interact()?
-                    {
+                    if !helpers::ask_confirmation("Do you want to retry?")? {
                         return Err(err);
                     }
                 }

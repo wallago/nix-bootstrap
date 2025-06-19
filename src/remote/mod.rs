@@ -1,9 +1,12 @@
 use anyhow::{Result, anyhow};
-use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
+use dialoguer::{Input, Select, theme::ColorfulTheme};
 use ssh2::Session;
 use tracing::{info, warn};
 
-use crate::{helpers::disk::DiskDevices, local};
+use crate::{
+    helpers::{self, disk::DiskDevices},
+    local,
+};
 
 mod config;
 mod ssh;
@@ -37,10 +40,7 @@ impl Host {
     }
 
     pub fn get_hardware_config(&mut self) -> Result<bool> {
-        if !Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!("Do you want to get hardware configuration?",))
-            .interact()?
-        {
+        if !helpers::ask_confirmation("Do you want to get hardware configuration?")? {
             warn!("❗ Skipping hardware-configuration part");
             return Ok(false);
         }
@@ -53,10 +53,7 @@ impl Host {
     }
 
     pub fn get_disk_device(&mut self) -> Result<bool> {
-        if !Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("Do you want to select a disk device?")
-            .interact()?
-        {
+        if !helpers::ask_confirmation("Do you want to select a disk device?")? {
             warn!("❗ Skipping disk device selection");
             return Ok(false);
         }
@@ -83,10 +80,7 @@ impl Host {
     }
 
     pub fn get_age_key(&mut self) -> Result<bool> {
-        if !Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("Do you want to get age key?")
-            .interact()?
-        {
+        if !helpers::ask_confirmation("Do you want to get age key?")? {
             warn!("❗ Skipping age key part");
             return Ok(false);
         }

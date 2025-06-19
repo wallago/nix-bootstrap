@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use dialoguer::{Confirm, Select, theme::ColorfulTheme};
+use dialoguer::{Select, theme::ColorfulTheme};
 use git2::Repository;
 use tempfile::TempDir;
 use tracing::info;
@@ -43,7 +43,10 @@ impl Repo {
                 repo_path.display()
             ))?)?;
         if use_iso {
-            hosts = hosts.into_iter().filter(|host| host.starts_with("plankton")).collect::<Vec<String>>();
+            hosts = hosts
+                .into_iter()
+                .filter(|host| host.starts_with("plankton"))
+                .collect::<Vec<String>>();
         }
         let selection = Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Select a config host?")
@@ -67,10 +70,7 @@ impl Repo {
         info!("📝 Untrack config changes");
         let files = helpers::git::untrack_changes(&self.git)?;
         files.iter().for_each(|file| println!("🔸 {file}"));
-        if Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("Do you want to see the detail of those changes?")
-            .interact()?
-        {
+        if helpers::ask_confirmation("Do you want to see the detail of those changes?")? {
             for file in files {
                 info!(
                     "🔸 {}:\n{}",
