@@ -21,7 +21,7 @@ fn main() -> Result<()> {
         info!("🆕 Remote host system is running on an image");
         warn!("🔸 SSH access must be available");
         warn!("🔸 Password must be set");
-        local.git_clone_nix_config(true)?;
+        local.set_nix_config(true)?;
         if hardware_config {
             local.update_hardware_config(remote.config.get_hardware_file()?)?;
         }
@@ -39,7 +39,7 @@ fn main() -> Result<()> {
     info!("🔄 Remote host system is running on an config");
     warn!("🔸 SSH access must be available");
     warn!("🔸 Root privileges must be available");
-    local.git_clone_nix_config(false)?;
+    local.set_nix_config(false)?;
     let age_key = remote.get_age_key()?;
     if age_key {
         local.update_sops(remote.config.get_age_key()?)?;
