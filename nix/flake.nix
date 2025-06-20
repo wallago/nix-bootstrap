@@ -13,35 +13,42 @@
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs { inherit system overlays; };
         rust = pkgs.rust-bin.nightly.latest.default;
-        nixosIso =
-          "https://github.com/nix-community/nixos-images/releases/download/nixos-unstable/nixos-installer-x86_64-linux.iso";
-        diskImage = "vm-disk.qcow2";
+        # nixosIso =
+        #   "https://github.com/nix-community/nixos-images/releases/download/nixos-unstable/nixos-installer-x86_64-linux.iso";
+        # diskImage = "vm-disk.qcow2";
       in {
+        packages.default = pkgs.rustPlatform.buildRustPackage {
+          name = "nix-bootstrap";
+          src = ./..;
+          cargoLock = { lockFile = ../Cargo.lock; };
+          nativeBuildInputs = [ pkgs.pkg-config ];
+          buildInputs = [ pkgs.openssl ];
+        };
         devShells = {
           default = pkgs.mkShell {
-            buildInputs = with pkgs;
-              [ pkg-config openssl sops rust-analyzer ] ++ [ rust ];
+            nativeBuildInputs = [ pkgs.pkg-config ];
+            buildInputs = with pkgs; [ openssl sops rust-analyzer ] ++ [ rust ];
             shellHook = ''
               echo "
               🐚 Rust dev shell ready!
               Run: cargo build / cargo test / etc."
             '';
           };
-          qemu = pkgs.mkShell {
-            buildInputs = with pkgs;
-              [ pkg-config openssl sops rust-analyzer qemu ] ++ [ rust ];
-            shellHook = ''
-              export PATH=$PATH:${toString ./shell}
-              export nixosIso=${nixosIso}
-              export diskImage=${diskImage}
-              echo "
-              Welcome to your QEMU NixOS dev shell! 
-              Available commands: 
-              - create-qemu-disk.sh 
-              - run-qemu.sh (--iso optional)
-              - ssh-vm.sh"
-            '';
-          };
+          # qemu = pkgs.mkShell {
+          #   buildInputs = with pkgs;
+          #     [ pkg-config openssl sops rust-analyzer qemu ] ++ [ rust ];
+          #   shellHook = ''
+          #     export PATH=$PATH:${toString ./shell}
+          #     export nixosIso=${nixosIso}
+          #     export diskImage=${diskImage}
+          #     echo "
+          #     Welcome to your QEMU NixOS dev shell! 
+          #     Available commands: 
+          #     - create-qemu-disk.sh 
+          #     - run-qemu.sh (--iso optional)
+          #     - ssh-vm.sh"
+          #   '';
+          # };
         };
       });
 }
