@@ -16,18 +16,18 @@
         # nixosIso =
         #   "https://github.com/nix-community/nixos-images/releases/download/nixos-unstable/nixos-installer-x86_64-linux.iso";
         # diskImage = "vm-disk.qcow2";
+        basePackages = with pkgs; [ openssl pkg-config ];
       in {
         packages.default = pkgs.rustPlatform.buildRustPackage {
           name = "nix-bootstrap";
           src = ./..;
           cargoLock = { lockFile = ../Cargo.lock; };
-          nativeBuildInputs = [ pkgs.pkg-config ];
-          buildInputs = [ pkgs.openssl ];
+          buildInputs = basePackages;
         };
         devShells = {
           default = pkgs.mkShell {
             nativeBuildInputs = [ pkgs.pkg-config ];
-            buildInputs = with pkgs; [ openssl sops rust-analyzer ] ++ [ rust ];
+            buildInputs = basePackages ++ [ rust ];
             shellHook = ''
               echo "
               🐚 Rust dev shell ready!
