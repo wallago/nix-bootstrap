@@ -1,10 +1,10 @@
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, anyhow};
-use dialoguer::{Select, theme::ColorfulTheme};
+use dialoguer::{Input, Select, theme::ColorfulTheme};
 use git2::Repository;
 use tempfile::TempDir;
 use tracing::info;
@@ -15,14 +15,30 @@ pub struct Repo {
     pub git: Repository,
     pub path: PathBuf,
     #[allow(dead_code)]
-    tmp_dir: TempDir, // Keep tempdir alive
+    tmp_dir: Option<TempDir>,
     pub host: String,
 }
 
 impl Repo {
-    pub fn clone_nix_config(use_iso: bool) -> Result<Self> {
-        info!("📂 Clone nix-config git repository ");
-        let (repo, tmp_dir) = helpers::git::clone_repository("nix-config")?;
+    pub fn clone_nix_config(use_iso: bool, use_path: bool) -> Result<Self> {
+        let (repo, tmp_dir) = match use_path {
+            true => {
+                info!("📂 Get nix-config git repository ");
+                let path = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Enter nix-config path:")
+                    .default(env::current_dir()?.display().to_string())
+                    .allow_empty(false)
+                    .show_default(true)
+                    .interact_text()?;
+                let repo = helpers::git::get_repository_by_path(&path)?;
+                (repo, None)
+            }
+            false => {
+                info!("📂 Clone nix-config git repository ");
+                let (repo, tmp_dir) = helpers::git::get_repository_by_clone("nix-config")?;
+                (repo, Some(tmp_dir))
+            }
+        };
         let repo_dir = repo.path().to_path_buf();
         let repo_path = repo_dir
             .parent()
