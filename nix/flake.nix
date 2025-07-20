@@ -27,7 +27,7 @@
           default = pkgs.mkShell {
             nativeBuildInputs = commonNativeBuildInputs;
             buildInputs = with pkgs;
-              [ rust-analyzer ] ++ [ rust ] ++ commonBuildInputs;
+              [ sops rust-analyzer ] ++ [ rust ] ++ commonBuildInputs;
             shellHook = ''
               echo "
               🐚 Rust dev shell ready!

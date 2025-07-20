@@ -20,8 +20,8 @@ impl Host {
         Ok(Self { repo: None, ssh })
     }
 
-    pub fn set_nix_config(&mut self, use_iso: bool) -> Result<()> {
-        self.repo = Some(Repo::clone_nix_config(use_iso)?);
+    pub fn set_nix_config(&mut self, use_iso: bool, use_path: bool) -> Result<()> {
+        self.repo = Some(Repo::clone_nix_config(use_iso, use_path)?);
         Ok(())
     }
 
