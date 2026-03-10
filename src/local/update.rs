@@ -138,7 +138,7 @@ impl super::Host {
         let repo = self.get_repo()?;
         let encryt_file_path = format!("{}/nixos/common/secrets.yaml", repo.path.display());
         let command = format!(
-            "SOPS_CONFIG={}/.sops.yaml sops updatekeys {}",
+            "SOPS_AGE_KEY=$(ssh-to-age -private-key -i ~/.ssh/id_ed25519) SOPS_CONFIG={}/.sops.yaml sops updatekeys {}",
             repo.path.display(),
             encryt_file_path
         );
