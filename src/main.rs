@@ -21,7 +21,7 @@ fn main() -> Result<()> {
         info!("🆕 Remote host system is running on an image");
         warn!("🔸 SSH access must be available");
         warn!("🔸 Password must be set");
-        local.set_nix_config(true, false)?;
+        local.set_nix_config(true, true)?;
         if hardware_config {
             local.update_hardware_config(remote.config.get_hardware_file()?)?;
         }
