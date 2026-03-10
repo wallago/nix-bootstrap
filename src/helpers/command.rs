@@ -3,14 +3,15 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 
 pub fn run(cmd: &str) -> Result<()> {
-    let status = Command::new("sh")
+    let output = Command::new("sh")
         .arg("-c")
         .arg(cmd)
-        .status()
+        .output()
         .context("failed to run command")?;
 
-    if !status.success() {
-        bail!("Host command fail with exit status ({:?})", status)
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("Command failed ({:?}):\n{}", output.status, stderr)
     }
     Ok(())
 }
